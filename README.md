@@ -12,19 +12,26 @@ at runtime.
 
 ## Quick start
 
-1. Install [Aftman](https://github.com/LPGhatguy/aftman) or grab
-   [Rojo](https://rojo.space/docs/installation/) directly, plus the **Rojo
-   Studio plugin** (from the Roblox plugin marketplace, or run
-   `rojo plugin install`).
+1. Install [Rokit](https://github.com/rojo-rbx/rokit#installation) (macOS/Linux:
+   `curl -sSf https://raw.githubusercontent.com/rojo-rbx/rokit/main/scripts/install.sh | bash`;
+   Windows PowerShell:
+   `Invoke-RestMethod https://raw.githubusercontent.com/rojo-rbx/rokit/main/scripts/install.ps1 | Invoke-Expression`).
 2. From the repo root, run:
+   ```
+   rokit install
+   rojo plugin install
+   ```
+   The first command reads this repo's `rokit.toml` and installs the exact
+   pinned Rojo version; the second installs the Rojo Studio plugin.
+3. Still from the repo root, run:
    ```
    rojo serve
    ```
-3. Open a new place in Roblox Studio, open the Rojo plugin panel, and click
+   and leave it running.
+4. Open a new place in Roblox Studio, open the Rojo plugin panel, and click
    **Connect**.
-4. Press Play (ideally with **multiple test server instances** — Studio's
-   "Start" menu lets you launch several clients at once — this is a
-   multiplayer game).
+5. Press Play (ideally with **multiple test server instances** — Studio's
+   Test tab → Start → set Players to 2-4 — this is a multiplayer game).
 
 The store, monsters, and stations are generated fresh by
 `Main.server.lua` every time the server starts, so there's nothing to build
