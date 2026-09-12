@@ -1,13 +1,69 @@
 # Sound Design Brief
 
-Every sound in this game is now wired up in code and will "just work" the
+Every sound in this game is wired up in code and will "just work" the
 moment you paste a real asset ID into `Config.lua` — no other file needs to
 change. Right now everything defaults to `""` (silent, no error) except the
 monster footstep loops, which use a sound bundled with every Roblox client
 so the game isn't totally silent even before you add anything.
 
-This doc is the shopping list: what each slot needs, roughly how it should
-sound, and where to get it.
+## Placeholder audio is already generated for every slot
+
+I can't reach the general internet from here (only a couple of allowlisted
+hosts, none of them audio libraries) and I don't have the ability to record
+real voices or upload anything to Roblox on your behalf — that last step
+needs your account either way, since Roblox only accepts audio through
+Studio/the Creator Dashboard, moderated. What I *can* do is synthesize
+original audio with plain DSP (sine/noise/envelope math via numpy, no
+samples, nothing lifted from anywhere), so that's what's in `sfx/placeholder/`
+in this repo: **34 finished, non-infringing WAV files, one for every single
+`Config.Sounds` / per-monster slot.**
+
+They're synthesized, not recorded — so `chase_barney.wav` is a low
+distorted-roar-style stinger and `idle_george.wav` is a rapid high tremolo
+"chatter", not an actual barney/monkey sound. Genuinely usable as real
+placeholders (there's audible signal, sensible duration, no clipping), not
+just tone-generator noise, and every monster's pitch/style is derived from
+its existing `footstepPitch` in `Config.lua` so the roster keeps sounding
+consistent per-character. Treat these as v1 — swap any of them out later
+using the sourcing brief further down whenever you have time to hunt for
+(or record) something better.
+
+### File → Config field mapping
+
+Global (`sfx/placeholder/*.wav` → `Config.Sounds.*`):
+
+| File | Config field |
+|---|---|
+| `store_ambience.wav` | `StoreAmbience` |
+| `heartbeat.wav` | `Heartbeat` |
+| `round_start.wav` | `RoundStart` |
+| `intermission_start.wav` | `IntermissionStart` |
+| `exit_unlocked.wav` | `ExitUnlocked` |
+| `escape_success.wav` | `EscapeSuccess` |
+| `caught.wav` | `Caught` |
+| `ui_click.wav` | `UIClick` |
+| `minigame_success.wav` | `MinigameSuccess` |
+| `minigame_fail.wav` | `MinigameFail` |
+
+Per-monster (`chase_<id>.wav` / `jumpscare_<id>.wav` / `idle_<id>.wav`, `<id>`
+lowercased, e.g. `chase_thomas.wav`) → that monster's `chaseSoundId` /
+`jumpscareSoundId` / `idleSoundId` in `Config.Monsters`.
+
+### Getting them into the game
+
+1. In Studio: **View → Toolbox → Inventory tab → Audio**, then use the
+   upload button (or drag the `.wav` file in) — or upload via the
+   [Creator Dashboard](https://create.roblox.com/) under Creations → Audio.
+2. Once approved, Roblox gives you an asset ID. Paste
+   `"rbxassetid://123456789"` into the matching `Config.lua` field from the
+   table above.
+3. Done — no other code changes. These are fully original synthesized
+   waveforms, so there's nothing for Roblox's copyright moderation to flag.
+
+## If you want better/real sounds later
+
+This is the shopping list: what each slot is going for, and where to look
+for something closer to the real thing than a synthesized placeholder.
 
 ## How to fill in a slot
 
@@ -86,6 +142,18 @@ growl/scream/giggle sounds (using each monster's existing `footstepPitch`
 as a rough guide — high pitch for George/Peppa/SpongeBob, low for
 Barney/Thomas) gets you eight distinguishable characters from 2-3 source
 sounds if you don't want to hunt down eight unique ones.
+
+### Where to look beyond Studio's Toolbox
+
+I can search the web from here but can't download binary files or verify
+licenses myself, so treat these as starting points — always check the
+license on the specific file you grab, not just the site's homepage:
+
+- [OpenGameArt.org CC0 Sound Effects](https://opengameart.org/content/cc0-sound-effects) — includes a public-domain creature/growl pack.
+- [99Sounds free jumpscare & cinematic impacts pack](https://99sounds.org/rumore-cinematic-impacts/) — 50 free stingers/impacts, good for `Caught`/`chaseSoundId`.
+- [Freesound.org](https://freesound.org) — huge searchable library; filter by CC0 specifically, since not everything there is.
+- [itch.io sound packs](https://itch.io) — search "monster sfx" or "horror sfx"; many are name-your-price, some CC0 — read the included license file.
+- [ElevenLabs' free sound effect generator](https://elevenlabs.io/sound-effects/scary-jumpscare) — type a text description ("high-pitched cartoon monkey screech") and it generates a custom AI sound effect you can preview/download for free without an account for occasional use — probably the fastest way to get closer-to-real character sounds without recording anything yourself.
 
 ## What's already wired and needs nothing further
 
