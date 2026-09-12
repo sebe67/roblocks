@@ -2,6 +2,8 @@
 -- before the whole-minigame timer (config.duration) runs out.
 
 local RunService = game:GetService("RunService")
+local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
+local SoundKit = require(game:GetService("ReplicatedStorage").Shared.SoundKit)
 local UIUtil = require(script.Parent.Parent.UIUtil)
 
 local COLORS = {
@@ -63,6 +65,7 @@ function RestockShelves.Play(container, config, onComplete)
 			if finished then
 				return
 			end
+			SoundKit.PlayUI(Config.Sounds.UIClick, { Volume = 0.4 })
 			if currentTarget and c.name == currentTarget.name then
 				progress += 1
 				updateProgressLabel()

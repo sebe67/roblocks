@@ -4,6 +4,8 @@
 -- overall timer runs out.
 
 local RunService = game:GetService("RunService")
+local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
+local SoundKit = require(game:GetService("ReplicatedStorage").Shared.SoundKit)
 local UIUtil = require(script.Parent.Parent.UIUtil)
 
 local PANEL_COLORS = {
@@ -66,6 +68,7 @@ function FlatPackAssembly.Play(container, config, onComplete)
 			if not accepting or finished then
 				return
 			end
+			SoundKit.PlayUI(Config.Sounds.UIClick, { Volume = 0.4 })
 			if i == sequence[playerIndex] then
 				playerIndex += 1
 				if playerIndex > #sequence then

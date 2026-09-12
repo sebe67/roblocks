@@ -4,6 +4,8 @@
 
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
+local SoundKit = require(game:GetService("ReplicatedStorage").Shared.SoundKit)
 local UIUtil = require(script.Parent.Parent.UIUtil)
 
 local SelfCheckout = {}
@@ -73,6 +75,7 @@ function SelfCheckout.Play(container, config, onComplete)
 		if finished then
 			return
 		end
+		SoundKit.PlayUI(Config.Sounds.UIClick, { Volume = 0.4 })
 		local markerScale = marker.Position.X.Scale
 		local zoneStart = greenZone.Position.X.Scale
 		local zoneEnd = zoneStart + greenZone.Size.X.Scale

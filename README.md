@@ -137,10 +137,15 @@ I did not go looking for Toolbox assets or generate images of these
 characters, since I can't verify licensing on your behalf.
 
 **Other things you'll want to do before this feels finished:**
-- **Audio**: there is no sound anywhere yet (no jumpscare stingers, no
-  ambient store hum, no footsteps). `JumpscareController.lua` and
-  `Config.Monsters` are exactly where you'd wire in a `SoundId` per
-  monster.
+- **Audio is wired up but empty.** Footsteps (3D, pitch/volume scale with
+  patrol/chase state), a proximity heartbeat, chase stingers, jumpscare
+  screams, minigame success/fail, and UI clicks all have working code paths
+  and safely no-op until you paste in real `rbxassetid://...` values. See
+  **[SOUND_DESIGN.md](SOUND_DESIGN.md)** for the exact brief and source
+  suggestions for every slot in `Config.Sounds` and `Config.Monsters` — I
+  can't generate or license actual audio (especially not character voice
+  clips) from here, so this is the one area that's a creative brief rather
+  than a finished asset.
 - **Jumpscare visuals**: currently a colored full-screen flash + text +
   a small camera-FOV shake. Swap the flash `Frame` for a full-screen
   `ImageLabel` once you have (or commission) real jumpscare art.
@@ -166,15 +171,17 @@ characters, since I can't verify licensing on your behalf.
 
 ```
 default.project.json                 Rojo project definition
+SOUND_DESIGN.md                      Sound brief/shopping list for every Config.Sounds / per-monster slot
 src/ReplicatedStorage/Shared/
-  Config.lua                         All tuning: monsters, minigames, maze, lighting, round timing
+  Config.lua                         All tuning: monsters, minigames, maze, lighting, round timing, sounds
   Net.lua                            Lazy RemoteEvent/RemoteFunction lookup helper
+  SoundKit.lua                       Play2D/loop3D/playAt sound helpers (safe no-op on empty SoundId)
 src/ServerScriptService/
   Main.server.lua                    Boots everything, wires services together
   MazeGenerator.lua                  Builds the store geometry + signage + stations + exit
   StoreTheme.lua                     Lighting/atmosphere + dead-fixture flicker loop
   WaypointGraph.lua                  Thomas's restricted rail-only pathing graph
-  MonsterAI.lua                      Per-monster state machine + placeholder rig
+  MonsterAI.lua                      Per-monster state machine + placeholder rig + monster audio
   MonsterSpawner.lua                 Spawns one of every Config.Monsters entry
   MinigameService.lua                Station wiring, noise pulses, exit-unlock trigger
   ExitService.lua                    Exit door lock/unlock + escape-zone detection
@@ -184,10 +191,11 @@ src/StarterPlayerScripts/
   Main.client.lua                    Boots all client controllers
   UIUtil.lua                         Shared UI-building helpers
   SprintController.lua               Shift-to-sprint
-  JumpscareController.lua            Full-screen jumpscare on catch
+  AmbienceController.lua             Store ambience loop, proximity heartbeat, round/exit/escape stingers
+  JumpscareController.lua            Full-screen jumpscare on catch + catch/scream audio
   DeathController.lua                Death/respawn/spectate menu + escape banner
   SpectateController.lua             Camera-follow spectating with target cycling
-  MinigameController.lua             Minigame overlay + dispatch to the 3 minigame modules
+  MinigameController.lua             Minigame overlay + dispatch to the 3 minigame modules + success/fail audio
   HUDController.lua                  Round phase, station progress, results screen
   Minigames/
     RestockShelves.lua

@@ -1,4 +1,6 @@
+local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local Net = require(game:GetService("ReplicatedStorage").Shared.Net)
+local SoundKit = require(game:GetService("ReplicatedStorage").Shared.SoundKit)
 local UIUtil = require(script.Parent.UIUtil)
 
 local RestockShelves = require(script.Parent.Minigames.RestockShelves)
@@ -62,6 +64,7 @@ function MinigameController.Init(context)
 		if not activeStationId then
 			return
 		end
+		SoundKit.PlayUI(success and Config.Sounds.MinigameSuccess or Config.Sounds.MinigameFail, { Volume = 0.7 })
 		resultEvent:FireServer(activeStationId, success)
 		if activeCleanup then
 			activeCleanup()
@@ -75,6 +78,7 @@ function MinigameController.Init(context)
 	end
 
 	giveUpBtn.MouseButton1Click:Connect(function()
+		SoundKit.PlayUI(Config.Sounds.UIClick, { Volume = 0.5 })
 		endGame(false)
 	end)
 

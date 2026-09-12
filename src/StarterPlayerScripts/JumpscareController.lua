@@ -1,10 +1,12 @@
 -- Full-screen flash + name card + a quick camera-FOV shake when the server
 -- says a monster caught you. Swap the flash color for a real splash image
--- and add a scream SoundId once you have licensed/owned audio assets.
+-- once you have one; the audio (impact thud + per-monster scream) is
+-- already wired to Config.Sounds.Caught / def.jumpscareSoundId.
 
 local TweenService = game:GetService("TweenService")
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local Net = require(game:GetService("ReplicatedStorage").Shared.Net)
+local SoundKit = require(game:GetService("ReplicatedStorage").Shared.SoundKit)
 local UIUtil = require(script.Parent.UIUtil)
 
 local JumpscareController = {}
@@ -57,6 +59,11 @@ function JumpscareController.Init(context)
 		nameLabel.Text = string.upper(def.displayName) .. "!!"
 		nameLabel.TextColor3 = def.accentColor
 		flavorLabel.Text = def.flavor
+
+		SoundKit.PlayUI(Config.Sounds.Caught, { Volume = 0.8 })
+		task.delay(0.15, function()
+			SoundKit.PlayUI(def.jumpscareSoundId, { Volume = 1 })
+		end)
 
 		local camera = workspace.CurrentCamera
 		task.spawn(function()

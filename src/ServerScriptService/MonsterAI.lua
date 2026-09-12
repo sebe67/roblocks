@@ -8,6 +8,8 @@
 
 local PathfindingService = game:GetService("PathfindingService")
 local Players = game:GetService("Players")
+local CollectionService = game:GetService("CollectionService")
+local SoundKit = require(game:GetService("ReplicatedStorage").Shared.SoundKit)
 
 local MonsterAI = {}
 MonsterAI.__index = MonsterAI
@@ -75,6 +77,8 @@ local function createRig(def)
 	label.Text = def.displayName
 	label.Parent = nameTag
 
+	CollectionService:AddTag(model, "Monster")
+
 	return model, humanoid, root
 end
 
@@ -95,6 +99,14 @@ function MonsterAI.new(def, maze, waypointGraph)
 
 	self.model, self.humanoid, self.root = createRig(def)
 	self.model.Parent = workspace
+
+	self.footstepSound = SoundKit.CreateLoop3D(self.root, def.footstepSoundId, {
+		Name = "Footsteps",
+		Volume = 0.4,
+		PlaybackSpeed = def.footstepPitch or 1,
+		MaxDistance = def.footstepMaxDistance or 60,
+	})
+	self.nextIdleSoundAt = os.clock() + math.random((def.idleSoundInterval or { 8, 16 })[1], (def.idleSoundInterval or { 8, 16 })[2])
 
 	self.touchConn = self.root.Touched:Connect(function(hit)
 		self:_onTouch(hit)
@@ -317,6 +329,24 @@ function MonsterAI:_applyQuirkSpeed(baseSpeed)
 	return baseSpeed
 end
 
+function MonsterAI:_updateFootstepAudio()
+	local sound = self.footstepSound
+	if not sound then
+		return
+	end
+	local pitchMultiplier, volume = 1, 0.35
+	if self.state == "Chase" then
+		pitchMultiplier, volume = 1.3, 0.75
+	elseif self.state == "Investigate" or self.state == "Search" then
+		pitchMultiplier, volume = 1.1, 0.5
+	end
+	sound.PlaybackSpeed = (self.def.footstepPitch or 1) * pitchMultiplier
+	sound.Volume = volume
+	if sound.SoundId ~= "" and not sound.Playing then
+		sound:Play()
+	end
+end
+
 function MonsterAI:Update(dt)
 	if self.paused or self.destroyed then
 		return
@@ -332,11 +362,17 @@ function MonsterAI:Update(dt)
 			self.target = seen.player.Character
 			self.lastSightTime = now
 			self.currentPath = nil
+			SoundKit.PlayAt(self.root, def.chaseSoundId, { Volume = 0.9, MaxDistance = 80 })
 			if def.quirk == "callout" then
 				MonsterAI.BroadcastCallout(seen.root.Position, self)
+				-- Dora's idleSoundId is reserved for this exact moment -- her
+				-- "callout" line, not a random patrol tell.
+				SoundKit.PlayAt(self.root, def.idleSoundId, { Volume = 0.8, MaxDistance = 70 })
 			end
 		end
 	end
+
+	self:_updateFootstepAudio()
 
 	if self.state == "Chase" then
 		local root = self.target and self.target:FindFirstChild("HumanoidRootPart")
@@ -394,6 +430,14 @@ function MonsterAI:Update(dt)
 	if reachedEnd then
 		self.currentPath = nil
 	end
+
+	-- Occasional audio tell (SpongeBob's giggle, George's chatter, etc).
+	-- Dora's idleSoundId is reserved for her callout line, not this roll.
+	if def.quirk ~= "callout" and now > self.nextIdleSoundAt then
+		SoundKit.PlayAt(self.root, def.idleSoundId, { Volume = 0.6, MaxDistance = 40 })
+		local interval = def.idleSoundInterval or { 8, 16 }
+		self.nextIdleSoundAt = now + math.random(interval[1], interval[2])
+	end
 end
 
 function MonsterAI:TeleportTo(position)
@@ -407,6 +451,9 @@ function MonsterAI:SetPaused(paused)
 	self.paused = paused
 	if paused then
 		self.humanoid:MoveTo(self.root.Position)
+		if self.footstepSound then
+			self.footstepSound:Stop()
+		end
 	end
 end
 

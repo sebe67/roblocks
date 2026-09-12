@@ -1,5 +1,11 @@
 -- Central tuning table. Every system reads from here so the game can be
 -- rebalanced without touching logic code.
+--
+-- SOUND: every *SoundId field below defaults to "" (silent, no error) except
+-- footstepSoundId, which points at a real sound bundled with every Roblox
+-- client. Paste in your own rbxassetid://... once you've uploaded audio and
+-- everything wires up automatically -- no code changes needed. See
+-- SOUND_DESIGN.md at the repo root for what to source for each empty slot.
 
 local Config = {}
 
@@ -43,6 +49,32 @@ Config.Player = {
 	SprintSpeed = 25,
 }
 
+-- Global / UI / ambient sounds not tied to a specific monster. All default
+-- to "" (silent) -- see SOUND_DESIGN.md for a brief on each one.
+Config.Sounds = {
+	StoreAmbience = "", -- looping low dread drone/hum, plays for everyone throughout
+	Heartbeat = "", -- looping heartbeat; volume/pitch ramp with nearest monster distance
+	RoundStart = "", -- one-shot horn/bell when Playing begins
+	IntermissionStart = "", -- one-shot when the "next round starts in..." countdown begins
+	ExitUnlocked = "", -- triumphant one-shot when all stations are cleared
+	EscapeSuccess = "", -- one-shot for the player who reaches the exit
+	Caught = "", -- immediate impact/thud the instant a monster catches you
+	UIClick = "", -- generic button/interaction click, reused everywhere
+	MinigameSuccess = "", -- one-shot when any station is cleared
+	MinigameFail = "", -- one-shot when any station attempt is failed/given up
+	HeartbeatMaxDistance = 55, -- studs at which the heartbeat starts fading in
+	HeartbeatMinDistance = 10, -- studs at which the heartbeat hits full volume/pitch
+}
+
+-- Per-monster sound fields:
+--   footstepSoundId    looping 3D sound while alive, pitch/volume scale with state
+--   footstepPitch      base PlaybackSpeed for that loop (character via pitch)
+--   footstepMaxDistance  how far away the footsteps can be heard (Barney = far)
+--   chaseSoundId       one-shot 3D stinger the instant it spots you and gives chase
+--   jumpscareSoundId   one-shot 2D sound played in your ear at the jumpscare
+--   idleSoundId        one-shot 3D sound played occasionally during Patrol
+--                       (doubles as Dora's "callout" voice line -- see MonsterAI.lua)
+--   idleSoundInterval  {min, max} seconds between idle sound rolls
 Config.Monsters = {
 	{
 		id = "George",
@@ -61,6 +93,13 @@ Config.Monsters = {
 		quirk = "erratic",
 		jumpscareColor = Color3.fromRGB(120, 78, 42),
 		flavor = "Insatiably curious. Unfortunately, currently curious about your skull.",
+		footstepSoundId = "rbxasset://sounds/action_footsteps_plastic.mp3",
+		footstepPitch = 1.15,
+		footstepMaxDistance = 55,
+		chaseSoundId = "",
+		jumpscareSoundId = "",
+		idleSoundId = "",
+		idleSoundInterval = { 8, 16 },
 	},
 	{
 		id = "Peppa",
@@ -79,6 +118,13 @@ Config.Monsters = {
 		quirk = "snortBurst",
 		jumpscareColor = Color3.fromRGB(235, 150, 170),
 		flavor = "She has found a muddy puddle. She would like you to join her. Permanently.",
+		footstepSoundId = "rbxasset://sounds/action_footsteps_plastic.mp3",
+		footstepPitch = 1.05,
+		footstepMaxDistance = 50,
+		chaseSoundId = "",
+		jumpscareSoundId = "",
+		idleSoundId = "",
+		idleSoundInterval = { 7, 14 },
 	},
 	{
 		id = "Thomas",
@@ -97,6 +143,13 @@ Config.Monsters = {
 		quirk = "railOnly",
 		jumpscareColor = Color3.fromRGB(20, 90, 160),
 		flavor = "A really useful engine. Useful for absolutely flattening you.",
+		footstepSoundId = "rbxasset://sounds/action_footsteps_plastic.mp3",
+		footstepPitch = 0.8,
+		footstepMaxDistance = 75,
+		chaseSoundId = "",
+		jumpscareSoundId = "",
+		idleSoundId = "",
+		idleSoundInterval = { 10, 20 },
 	},
 	{
 		id = "Barney",
@@ -115,6 +168,13 @@ Config.Monsters = {
 		quirk = "stomper",
 		jumpscareColor = Color3.fromRGB(110, 40, 140),
 		flavor = "He loves you. You do not love him back.",
+		footstepSoundId = "rbxasset://sounds/action_footsteps_plastic.mp3",
+		footstepPitch = 0.6,
+		footstepMaxDistance = 90, -- his whole quirk is that you hear him coming from far away
+		chaseSoundId = "",
+		jumpscareSoundId = "",
+		idleSoundId = "",
+		idleSoundInterval = { 6, 12 },
 	},
 	{
 		id = "Grinch",
@@ -133,6 +193,13 @@ Config.Monsters = {
 		quirk = "darkBoost",
 		jumpscareColor = Color3.fromRGB(60, 130, 70),
 		flavor = "His heart grew three sizes today. So did his appetite for chaos.",
+		footstepSoundId = "rbxasset://sounds/action_footsteps_plastic.mp3",
+		footstepPitch = 0.95,
+		footstepMaxDistance = 45, -- he's sneaky; you should barely hear him until it's too late
+		chaseSoundId = "",
+		jumpscareSoundId = "",
+		idleSoundId = "",
+		idleSoundInterval = { 9, 18 },
 	},
 	{
 		id = "Po",
@@ -151,6 +218,13 @@ Config.Monsters = {
 		quirk = "rollDash",
 		jumpscareColor = Color3.fromRGB(28, 28, 28),
 		flavor = "There is no charge for awesomeness. Or for what happens next.",
+		footstepSoundId = "rbxasset://sounds/action_footsteps_plastic.mp3",
+		footstepPitch = 0.9,
+		footstepMaxDistance = 55,
+		chaseSoundId = "",
+		jumpscareSoundId = "",
+		idleSoundId = "",
+		idleSoundInterval = { 8, 15 },
 	},
 	{
 		id = "SpongeBob",
@@ -169,6 +243,13 @@ Config.Monsters = {
 		quirk = "giggler",
 		jumpscareColor = Color3.fromRGB(235, 210, 60),
 		flavor = "He is ready. He was born ready. Are you?",
+		footstepSoundId = "rbxasset://sounds/action_footsteps_plastic.mp3",
+		footstepPitch = 1.1,
+		footstepMaxDistance = 50,
+		chaseSoundId = "",
+		jumpscareSoundId = "",
+		idleSoundId = "", -- the giggle itself -- this is the "giggler" quirk's audio tell
+		idleSoundInterval = { 5, 11 },
 	},
 	{
 		id = "Dora",
@@ -187,6 +268,13 @@ Config.Monsters = {
 		quirk = "callout",
 		jumpscareColor = Color3.fromRGB(150, 60, 130),
 		flavor = "She sees you. She is telling EVERYONE she sees you.",
+		footstepSoundId = "rbxasset://sounds/action_footsteps_plastic.mp3",
+		footstepPitch = 1,
+		footstepMaxDistance = 50,
+		chaseSoundId = "",
+		jumpscareSoundId = "",
+		idleSoundId = "", -- her "callout" voice line -- fired the instant she spots you, not randomly
+		idleSoundInterval = { 8, 16 },
 	},
 }
 

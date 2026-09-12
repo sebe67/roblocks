@@ -1,5 +1,6 @@
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local Net = require(game:GetService("ReplicatedStorage").Shared.Net)
+local SoundKit = require(game:GetService("ReplicatedStorage").Shared.SoundKit)
 local UIUtil = require(script.Parent.UIUtil)
 
 local DeathController = {}
@@ -62,10 +63,12 @@ function DeathController.Init(context)
 	local spectateEvent = Net.GetEvent("RequestSpectate")
 
 	respawnBtn.MouseButton1Click:Connect(function()
+		SoundKit.PlayUI(Config.Sounds.UIClick, { Volume = 0.5 })
 		respawnEvent:FireServer()
 		gui.Enabled = false
 	end)
 	spectateBtn.MouseButton1Click:Connect(function()
+		SoundKit.PlayUI(Config.Sounds.UIClick, { Volume = 0.5 })
 		spectateEvent:FireServer()
 		gui.Enabled = false
 	end)
