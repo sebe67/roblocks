@@ -261,6 +261,7 @@ end
 function MonsterAI:_moveAlongPath(waypoints)
 	self.currentPath = waypoints
 	self.pathIndex = 1
+	self._lastCommandedPoint = nil
 end
 
 function MonsterAI:_followCurrentPath(dt)
@@ -276,7 +277,14 @@ function MonsterAI:_followCurrentPath(dt)
 		end
 		targetPoint = self.currentPath[self.pathIndex]
 	end
-	self.humanoid:MoveTo(targetPoint)
+	-- Only issue a new MoveTo when the target waypoint actually changes --
+	-- calling Humanoid:MoveTo() every single frame (even at the same target)
+	-- repeatedly interrupts the humanoid's walk state and is what was
+	-- causing the stuttery/erratic-looking movement.
+	if self._lastCommandedPoint ~= targetPoint then
+		self.humanoid:MoveTo(targetPoint)
+		self._lastCommandedPoint = targetPoint
+	end
 	return false
 end
 

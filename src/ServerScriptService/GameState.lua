@@ -104,7 +104,13 @@ function GameState:_checkRoundEnd()
 		return
 	end
 	for _, player in ipairs(Players:GetPlayers()) do
-		if player:GetAttribute("State") == "Alive" then
+		local state = player:GetAttribute("State")
+		-- "Dead" means they're still sitting on the Respawn/Spectate choice --
+		-- the round isn't over until every player has actually resolved that
+		-- choice (Spectating/Escaped/TimedOut), otherwise a solo/last-alive
+		-- player's jumpscare screen gets yanked away by the Results screen
+		-- before they can click anything.
+		if state == "Alive" or state == "Dead" then
 			return
 		end
 	end

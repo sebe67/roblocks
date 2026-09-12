@@ -1,3 +1,4 @@
+local UserInputService = game:GetService("UserInputService")
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local Net = require(game:GetService("ReplicatedStorage").Shared.Net)
 local SoundKit = require(game:GetService("ReplicatedStorage").Shared.SoundKit)
@@ -59,6 +60,25 @@ function MinigameController.Init(context)
 
 	local resultEvent = Net.GetEvent("MinigameResult")
 	local activeStationId, activeCleanup
+	local previousMouseBehavior, previousMouseIconEnabled
+
+	-- While the game camera has the mouse locked to the center of the
+	-- screen (normal in first-person), there's no free cursor to click
+	-- these buttons with at all. Free it while a minigame is open and put
+	-- it back exactly how it was once it closes.
+	local function freeMouse()
+		previousMouseBehavior = UserInputService.MouseBehavior
+		previousMouseIconEnabled = UserInputService.MouseIconEnabled
+		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+		UserInputService.MouseIconEnabled = true
+	end
+
+	local function restoreMouse()
+		if previousMouseBehavior ~= nil then
+			UserInputService.MouseBehavior = previousMouseBehavior
+			UserInputService.MouseIconEnabled = previousMouseIconEnabled
+		end
+	end
 
 	local function endGame(success)
 		if not activeStationId then
@@ -72,6 +92,7 @@ function MinigameController.Init(context)
 		activeCleanup = nil
 		activeStationId = nil
 		gui.Enabled = false
+		restoreMouse()
 		for _, child in ipairs(playArea:GetChildren()) do
 			child:Destroy()
 		end
@@ -89,6 +110,7 @@ function MinigameController.Init(context)
 		activeStationId = stationId
 		titleLabel.Text = config.stationName .. " -- " .. config.description
 		gui.Enabled = true
+		freeMouse()
 
 		local gameModule = GAMES[stationId]
 		if gameModule then

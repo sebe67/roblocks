@@ -1,6 +1,10 @@
 -- Once the server flips our State attribute to "Spectating" we point the
 -- camera at another alive player's Humanoid (CameraType.Custom does the
--- rest) and let , / . cycle targets.
+-- rest) and let , / . cycle targets. Also locks the camera to first-person
+-- for the duration of a round (per the game's design -- limited situational
+-- awareness is part of the scare), switching back to a normal free camera
+-- whenever spectating, since LockFirstPerson only ever looks through your
+-- own head and can't follow someone else's Humanoid.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -59,6 +63,7 @@ function SpectateController.Init(context)
 		spectating = true
 		gui.Enabled = true
 		index = 1
+		player.CameraMode = Enum.CameraMode.Classic
 		applyTarget()
 	end
 
@@ -99,6 +104,7 @@ function SpectateController.Init(context)
 		if spectating then
 			stopSpectating()
 		end
+		player.CameraMode = Enum.CameraMode.LockFirstPerson
 	end)
 end
 
