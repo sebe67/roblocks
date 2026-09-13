@@ -8,7 +8,16 @@ local UIUtil = require(script.Parent.Parent.UIUtil)
 
 local RetroTheme = {}
 
-RetroTheme.Font = Enum.Font.PressStart2P
+-- Enum.Font.Code: a genuinely ancient, guaranteed-to-exist legacy monospace
+-- font. A flashier pixel-art Google Font (e.g. "Press Start 2P") would look
+-- more authentically 8-bit, but referencing a font that turns out not to
+-- exist in Enum.Font throws the instant this module loads -- and since
+-- Main.client.lua requires MinigameController (which requires this module)
+-- before HUDController, that error was taking down the ENTIRE client script
+-- chain, silently skipping every controller listed after it (no
+-- Intermission countdown, no minigame overlay -- a total soft-lock). Code
+-- still reads as "terminal/retro" and can't do that.
+RetroTheme.Font = Enum.Font.Code
 
 RetroTheme.Colors = {
 	Background = Color3.fromRGB(12, 12, 24),

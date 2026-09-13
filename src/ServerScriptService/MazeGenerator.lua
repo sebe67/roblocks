@@ -84,7 +84,7 @@ local function partitionRooms(width, height, minSize, maxSize)
 	return rooms, cellBlock
 end
 
-local function generateGrid(width, height)
+local function generateGrid(width, height, entranceX, entranceY)
 	local cells = {}
 	for x = 1, width do
 		cells[x] = {}
@@ -171,7 +171,7 @@ local function generateGrid(width, height)
 
 	-- Recursive-backtracker spanning walk over ROOMS (not fine cells) --
 	-- guarantees every room is reachable from the entrance's room.
-	local startRoom = cellBlock[1][1]
+	local startRoom = cellBlock[entranceX][entranceY]
 	local visited = { [startRoom] = true }
 	local usedKeys = {}
 	local stack = { startRoom }
@@ -210,7 +210,14 @@ function MazeGenerator.Generate()
 	local wallHeight = Config.Maze.WallHeight
 	local wallThickness = Config.Maze.WallThickness
 
-	local cells, edgeStyle = generateGrid(W, H)
+	-- Spawn is the intersection point of all 4 color zones -- dead center of
+	-- the grid -- instead of a corner, so the round starts somewhere that
+	-- doesn't inherently favor exploring toward any one wing. Also used as
+	-- the room-graph spanning walk's start room, so connectivity naturally
+	-- radiates outward from where players actually begin.
+	local midX, midY = math.ceil(W / 2), math.ceil(H / 2)
+
+	local cells, edgeStyle = generateGrid(W, H, midX, midY)
 
 	-- Every wall/doorway-stub part is grown by this much (split evenly
 	-- across whichever ends the trim math computed) beyond its "exact"
@@ -240,7 +247,6 @@ function MazeGenerator.Generate()
 	-- Four roughly-quadrant color "wings" so wall color reads as a sense of
 	-- place rather than randomness, with an occasional off-palette wall or
 	-- shelf so it doesn't read as forced monotone either.
-	local midX, midY = math.ceil(W / 2), math.ceil(H / 2)
 	local function pickWallColor(x, y)
 		if math.random() < Config.Maze.ZoneAccentChance then
 			return WALL_PALETTE[math.random(1, #WALL_PALETTE)]
@@ -250,7 +256,7 @@ function MazeGenerator.Generate()
 		return zone and zone.primary or WALL_PALETTE[math.random(1, #WALL_PALETTE)]
 	end
 
-	local entranceCell = { x = 1, y = 1 }
+	local entranceCell = { x = midX, y = midY }
 	local exitCell = { x = W, y = H }
 
 	-- Spreads however many minigame stations Config.Minigames defines
@@ -441,7 +447,16 @@ function MazeGenerator.Generate()
 			local eastTrim = (hasWallMaterial(x, y, "E") or hasWallMaterial(x, neighborY, "E")) and (wallThickness / 2)
 				or 0
 			local length = cellSize - westTrim - eastTrim + SEAM_OVERLAP
-			local xOffset = (eastTrim - westTrim) / 2
+			-- Shifting the trimmed wall's center toward whichever side is
+			-- trimmed LESS keeps its untrimmed end flush with the raw
+			-- corner: a bigger westTrim needs a bigger +X shift (east) to
+			-- compensate, so this is (westTrim - eastTrim), not the other
+			-- way around. The flipped sign here was the actual cause of the
+			-- real, non-tiny gaps still showing up after the seam-overlap
+			-- fix -- invisible whenever westTrim == eastTrim (the common
+			-- case), but a real several-inch hole at every corner where
+			-- only one side has a perpendicular wall to meet.
+			local xOffset = (westTrim - eastTrim) / 2
 			local z = (dir == "N") and (-cellSize / 2) or (cellSize / 2)
 			size = Vector3.new(length, wallHeight + SEAM_OVERLAP, wallThickness)
 			cf = CFrame.new(center + Vector3.new(xOffset, wallHeight / 2, z))

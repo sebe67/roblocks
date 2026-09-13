@@ -1,0 +1,58 @@
+-- Subtle first-person head bob while moving, scaled up a bit while
+-- sprinting. Applied as a small camera-local offset layered on top of
+-- Roblox's own camera update every frame via BindToRenderStep at a priority
+-- just after Camera -- the same "run every frame, after the built-in
+-- camera script" trick CursorLock uses for mouse state, since a plain
+-- one-time CFrame set gets overwritten by that same built-in script.
+
+local RunService = game:GetService("RunService")
+local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
+
+local ViewBobController = {}
+
+-- Cycles per stud traveled (not per second) -- bob speed naturally scales
+-- with how fast you're actually moving instead of needing a separate
+-- frequency multiplier for sprint.
+local CYCLES_PER_STUD = 0.28
+local WALK_AMPLITUDE = 0.05
+local SPRINT_AMPLITUDE = 0.09
+local SWAY_RATIO = 0.5 -- horizontal sway relative to vertical bob, half frequency (figure-8)
+
+function ViewBobController.Init(context)
+	local player = context.player
+	local phase = 0
+
+	RunService:BindToRenderStep("ViewBob", Enum.RenderPriority.Camera.Value + 1, function(dt)
+		local camera = workspace.CurrentCamera
+		local character = player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if not camera or not humanoid or not root or humanoid.Health <= 0 then
+			return
+		end
+
+		local velocity = root.AssemblyLinearVelocity
+		local horizontalSpeed = Vector2.new(velocity.X, velocity.Z).Magnitude
+
+		phase += horizontalSpeed * dt * CYCLES_PER_STUD * (2 * math.pi)
+
+		-- Fades in smoothly from 0 as you approach WalkSpeed, then keeps
+		-- growing toward SPRINT_AMPLITUDE as you approach SprintSpeed --
+		-- no discrete "sprint on/off" snap, just however fast you're
+		-- actually going right now.
+		local moveRatio = math.clamp(horizontalSpeed / Config.Player.WalkSpeed, 0, 1)
+		local sprintT = math.clamp(
+			(horizontalSpeed - Config.Player.WalkSpeed) / math.max(Config.Player.SprintSpeed - Config.Player.WalkSpeed, 1),
+			0,
+			1
+		)
+		local amplitude = (WALK_AMPLITUDE + (SPRINT_AMPLITUDE - WALK_AMPLITUDE) * sprintT) * moveRatio
+
+		local bobY = math.sin(phase) * amplitude
+		local bobX = math.cos(phase * 0.5) * amplitude * SWAY_RATIO
+
+		camera.CFrame = camera.CFrame * CFrame.new(bobX, bobY, 0)
+	end)
+end
+
+return ViewBobController

@@ -62,7 +62,18 @@ in Workspace. A totally blank new place works fine.
   perpendicular wall or doorway (`hasWallMaterial` in `MazeGenerator.lua`)
   instead of always shaving a fixed amount off both ends — the old
   always-trim approach left thin gaps along the long open room boundaries
-  this room-based layout produces.
+  this room-based layout produces. (An actual sign-flip bug in that trim's
+  center-offset math was also the cause of the real, non-tiny gaps that
+  outlasted the first fix — invisible whenever a wall's two ends needed the
+  same trim, which is most of the time, but a real several-inch hole at any
+  corner where only one side did. Fixed, plus a small guaranteed overlap
+  between touching parts as a second line of defense against pure
+  render/float-precision seams.) Spawn is the entrance cell at the exact
+  center of the grid — the intersection point of all four color zones —
+  rather than a corner, and the room-graph spanning walk starts from there
+  too, so connectivity radiates outward from where the round actually
+  begins. `HallwayChance` (0.4) governs how often a room-to-room connector
+  is a wide open hallway gap instead of a narrow doorway.
   Plus IKEA-blue/yellow shelf units, fake-Swedish aisle signage
   (`GRÖNKVIST`, `MÖRKHUS`, ...), a lobby/entrance, a locked "loading dock"
   exit, and six minigame rooms.
@@ -95,8 +106,24 @@ in Workspace. A totally blank new place works fine.
   zig-zag and slower-than-expected closing speed reported even chasing a
   stationary target). Decorative parts (shelves, etc.) are also flagged
   `CanQuery = false` so they no longer spuriously block that same sight/path
-  raycast despite never physically colliding with anything.
+  raycast despite never physically colliding with anything. That spherecast
+  itself was also occasionally clipping the *floor* on a perfectly flat,
+  unobstructed line to a stationary player — its radius gives it real
+  vertical extent, and at a monster's root height that was enough to dip
+  below the floor's surface — so Floors/Ceiling are now excluded from the
+  raycast filter entirely; neither is ever a real obstacle to walk through.
+  Monsters are scattered at least `Config.Maze.MonsterSpawnExclusionCells`
+  cells from the (now-central) spawn point both at server boot and again at
+  the start of every round (`MonsterSpawner.RepositionAll`), so one can't
+  end up camping the entrance between rounds.
 - **Sprinting**: hold Shift, infinite, no stamina bar (`SprintController.lua`).
+- **View bob** (`ViewBobController.lua`): a subtle first-person camera bob
+  while moving, scaled up a bit while sprinting — cycles per stud traveled
+  rather than per second, so it naturally speeds up with your actual speed
+  instead of needing a separate sprint-only multiplier. Applied as a
+  camera-local offset layered on top of Roblox's own camera update every
+  frame (`RunService:BindToRenderStep`, same "run after the built-in camera
+  script" approach `CursorLock.lua` uses for mouse state).
 - **3 minigame stations** that require real attention and periodically ping
   every nearby monster while active (`MinigameService.lua` +
   `StarterPlayerScripts/Minigames/*`). Clearing all of them unlocks the exit
@@ -312,10 +339,11 @@ src/ServerScriptService/
   PlayerService.lua                  Round state per player, catch/respawn/spectate/escape
   GameState.lua                      Waiting → Intermission → Playing → Results loop, Overtime trigger
 src/StarterPlayerScripts/
-  Main.client.lua                    Boots all client controllers
+  Main.client.lua                    Boots all client controllers, each wrapped in pcall so one's error can't skip the rest
   UIUtil.lua                         Shared UI-building helpers
   CursorLock.lua                     Frees the mouse for clickable menus (fights the camera every frame)
   SprintController.lua               Shift-to-sprint
+  ViewBobController.lua               Subtle first-person camera bob, scaled up while sprinting
   AmbienceController.lua             Store ambience loop, proximity heartbeat, round/exit/escape stingers
   JumpscareController.lua            Full-screen jumpscare on catch + catch/scream audio
   DeathController.lua                Death/respawn/spectate menu + escape banner

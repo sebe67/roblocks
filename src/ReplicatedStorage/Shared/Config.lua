@@ -18,8 +18,9 @@ Config.Maze = {
 	MinRoomSize = 3, -- rooms are 3-5 base cells per side (66-110 studs) -- big open spaces, not a mini-maze
 	MaxRoomSize = 5,
 	LoopChance = 0.15, -- chance an extra room-to-room connection is added beyond the minimum spanning layout
-	HallwayChance = 0.25, -- of any room-to-room connection, the odds it's a wide open gap instead of a narrow doorway
+	HallwayChance = 0.4, -- of any room-to-room connection, the odds it's a wide open gap instead of a narrow doorway
 	DoorwayWidth = 6, -- narrow connections are this wide instead of the full room edge
+	MonsterSpawnExclusionCells = 4, -- monsters won't spawn/reposition within this many cells of the entrance at round start
 	ZoneAccentChance = 0.15, -- chance a wall/shelf ignores its zone color and picks any palette color instead
 	-- The grid is split into four roughly-quadrant color "wings" so wall
 	-- color reads as "you're in a different part of the store" instead of

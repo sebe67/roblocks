@@ -7,6 +7,7 @@ local Lighting = game:GetService("Lighting")
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local Net = require(game:GetService("ReplicatedStorage").Shared.Net)
 local MonsterAI = require(script.Parent.MonsterAI)
+local MonsterSpawner = require(script.Parent.MonsterSpawner)
 local StoreTheme = require(script.Parent.StoreTheme)
 
 local GameState = {}
@@ -79,6 +80,7 @@ function GameState:_playRound()
 	self.exitService:Reset()
 	self:_resetOvertimeVisuals()
 	MonsterAI.ExitOvertime()
+	MonsterSpawner.RepositionAll(self.monsters, self.maze)
 	self:_setMonstersPaused(false)
 	StoreTheme.SetBlackoutsEnabled(self.maze, true)
 
