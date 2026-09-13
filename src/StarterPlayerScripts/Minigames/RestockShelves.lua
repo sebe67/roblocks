@@ -94,7 +94,7 @@ function RestockShelves.Play(container, config, onComplete)
 		end
 		if os.clock() > deadline then
 			finished = true
-			onComplete(false)
+			onComplete(false, "timeout")
 		end
 	end)
 

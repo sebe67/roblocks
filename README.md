@@ -115,7 +115,19 @@ in Workspace. A totally blank new place works fine.
   Monsters are scattered at least `Config.Maze.MonsterSpawnExclusionCells`
   cells from the (now-central) spawn point both at server boot and again at
   the start of every round (`MonsterSpawner.RepositionAll`), so one can't
-  end up camping the entrance between rounds.
+  end up camping the entrance between rounds. The direct-chase case (both
+  normal chase and Overtime) now steers with `Humanoid:Move()` — a
+  continuous "here's the desired direction this frame" input, the same API
+  a player's own WASD ultimately drives — instead of calling
+  `Humanoid:MoveTo()` every frame toward the player's constantly-updating
+  position. `MoveTo` is meant for a one-shot "walk to this waypoint"
+  command; calling it repeatedly toward a moving target resets the
+  humanoid's internal walk/turn state on every call, and up close the
+  target's angle relative to the monster swings far enough, often enough,
+  that those resets *were* the visible flailing — wide S-turns, brief
+  backward lurches, overshooting past the player. `Move()` has none of
+  that, so the chase now reads as a smooth, direct pursuit no matter how
+  close the player is (`_chaseDirectly` in `MonsterAI.lua`).
 - **Sprinting**: hold Shift, infinite, no stamina bar (`SprintController.lua`).
 - **View bob** (`ViewBobController.lua`): a subtle first-person camera bob
   while moving, scaled up a bit while sprinting — cycles per stud traveled
@@ -123,7 +135,11 @@ in Workspace. A totally blank new place works fine.
   instead of needing a separate sprint-only multiplier. Applied as a
   camera-local offset layered on top of Roblox's own camera update every
   frame (`RunService:BindToRenderStep`, same "run after the built-in camera
-  script" approach `CursorLock.lua` uses for mouse state).
+  script" approach `CursorLock.lua` uses for mouse state). The raw physics
+  velocity it reads has small real per-frame noise (footstep impulses,
+  floor contact) that read as a shaky jitter on top of the bob at sprint's
+  bigger amplitude; smoothed with an exponential moving average, and tuned
+  down from ~7Hz to a real footstep cadence (~1.5-2.4Hz).
 - **3 minigame stations** that require real attention and periodically ping
   every nearby monster while active (`MinigameService.lua` +
   `StarterPlayerScripts/Minigames/*`). Clearing all of them unlocks the exit

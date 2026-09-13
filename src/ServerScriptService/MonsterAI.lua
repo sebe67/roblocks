@@ -516,6 +516,26 @@ function MonsterAI:_applyQuirkSpeed(baseSpeed)
 	return baseSpeed
 end
 
+-- Continuous steering toward a live (possibly moving) target position, used
+-- whenever the direct line to it is clear. Uses Humanoid:Move (a per-frame
+-- desired direction, exactly like a player's own WASD input) rather than
+-- Humanoid:MoveTo (a one-shot "walk to this waypoint and stop" command).
+-- MoveTo is the wrong tool here: calling it every frame toward a
+-- continuously-moving player resets the humanoid's internal walk/turn state
+-- on every single call, and once close to the player the target's angle
+-- relative to the monster swings hard and often enough that the resets
+-- themselves were the flailing -- wide S-turns, brief backward lurches,
+-- overshooting past the player entirely. Move() has none of that: it just
+-- sets a desired direction each frame and lets the humanoid's normal
+-- turn/walk physics carry it smoothly, the same as it does for a player.
+function MonsterAI:_chaseDirectly(targetPos)
+	local toTarget = targetPos - self.root.Position
+	toTarget = Vector3.new(toTarget.X, 0, toTarget.Z)
+	if toTarget.Magnitude > 0.1 then
+		self.humanoid:Move(toTarget.Unit)
+	end
+end
+
 function MonsterAI:_updateFootstepAudio()
 	local sound = self.footstepSound
 	if not sound then
@@ -561,12 +581,7 @@ function MonsterAI:_updateGodChase(now)
 
 	if def.quirk ~= "wideBody" and self:_hasClearPath(nearestRoot.Position) then
 		self.currentPath = nil
-		local moved = (not self._lastCommandedPoint)
-			or (self._lastCommandedPoint - nearestRoot.Position).Magnitude > 0.5
-		if moved then
-			self.humanoid:MoveTo(nearestRoot.Position)
-			self._lastCommandedPoint = nearestRoot.Position
-		end
+		self:_chaseDirectly(nearestRoot.Position)
 	else
 		local pathExhausted = not self.currentPath or not self.currentPath[self.pathIndex]
 		if pathExhausted or now - self.lastPathTime > Config.Round.OvertimeRepathInterval then
@@ -637,12 +652,7 @@ function MonsterAI:Update(dt)
 			-- when a wall is actually blocking that direct route.
 			if def.quirk ~= "wideBody" and self:_hasClearPath(root.Position) then
 				self.currentPath = nil
-				local moved = (not self._lastCommandedPoint)
-					or (self._lastCommandedPoint - root.Position).Magnitude > 0.5
-				if moved then
-					self.humanoid:MoveTo(root.Position)
-					self._lastCommandedPoint = root.Position
-				end
+				self:_chaseDirectly(root.Position)
 			else
 				local pathExhausted = not self.currentPath or not self.currentPath[self.pathIndex]
 				if pathExhausted then

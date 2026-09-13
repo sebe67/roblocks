@@ -125,7 +125,7 @@ function SelfCheckout.Play(container, config, onComplete)
 		marker.Position = UDim2.new(scale, 0, -0.1, 0)
 		if os.clock() > deadline then
 			finished = true
-			onComplete(false)
+			onComplete(false, "timeout")
 		end
 	end)
 

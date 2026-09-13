@@ -164,7 +164,7 @@ function ForkliftCertification.Play(container, config, onComplete)
 
 		if os.clock() > deadline then
 			finished = true
-			onComplete(false)
+			onComplete(false, "timeout")
 		end
 	end)
 

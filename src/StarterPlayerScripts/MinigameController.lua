@@ -111,6 +111,7 @@ function MinigameController.Init(context)
 		complete = { text = "TASK COMPLETE!", color = RetroTheme.Colors.Success },
 		tooFar = { text = "You moved too far away from the task.", color = Color3.fromRGB(230, 190, 70) },
 		gaveup = { text = "You gave up on the task.", color = Color3.fromRGB(230, 190, 70) },
+		timeout = { text = "TASK FAILED -- you ran out of time.", color = RetroTheme.Colors.Danger },
 		failed = { text = "Task failed.", color = RetroTheme.Colors.Danger },
 	}
 

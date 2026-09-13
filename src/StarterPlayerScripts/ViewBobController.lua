@@ -12,15 +12,20 @@ local ViewBobController = {}
 
 -- Cycles per stud traveled (not per second) -- bob speed naturally scales
 -- with how fast you're actually moving instead of needing a separate
--- frequency multiplier for sprint.
-local CYCLES_PER_STUD = 0.28
+-- frequency multiplier for sprint. Tuned to land around 1.5Hz at WalkSpeed
+-- and ~2.4Hz at SprintSpeed -- a real footstep cadence; the original value
+-- here worked out to ~7Hz while sprinting, which reads as a shaky vibration
+-- rather than a bob.
+local CYCLES_PER_STUD = 0.095
 local WALK_AMPLITUDE = 0.05
 local SPRINT_AMPLITUDE = 0.09
 local SWAY_RATIO = 0.5 -- horizontal sway relative to vertical bob, half frequency (figure-8)
+local SPEED_SMOOTHING = 12 -- higher = snaps to actual speed faster, lower = smoother but laggier
 
 function ViewBobController.Init(context)
 	local player = context.player
 	local phase = 0
+	local smoothedSpeed = 0
 
 	RunService:BindToRenderStep("ViewBob", Enum.RenderPriority.Camera.Value + 1, function(dt)
 		local camera = workspace.CurrentCamera
@@ -31,18 +36,25 @@ function ViewBobController.Init(context)
 			return
 		end
 
+		-- AssemblyLinearVelocity has small real per-frame noise (footstep
+		-- impulses, floor contact, uneven frame timing) that fed straight
+		-- into the bob was showing up as a shaky jitter on top of the
+		-- intended bob, most noticeable at sprint's bigger amplitude. An
+		-- exponential moving average smooths that out without adding
+		-- noticeable input lag.
 		local velocity = root.AssemblyLinearVelocity
-		local horizontalSpeed = Vector2.new(velocity.X, velocity.Z).Magnitude
+		local rawSpeed = Vector2.new(velocity.X, velocity.Z).Magnitude
+		smoothedSpeed += (rawSpeed - smoothedSpeed) * math.clamp(dt * SPEED_SMOOTHING, 0, 1)
 
-		phase += horizontalSpeed * dt * CYCLES_PER_STUD * (2 * math.pi)
+		phase += smoothedSpeed * dt * CYCLES_PER_STUD * (2 * math.pi)
 
 		-- Fades in smoothly from 0 as you approach WalkSpeed, then keeps
 		-- growing toward SPRINT_AMPLITUDE as you approach SprintSpeed --
 		-- no discrete "sprint on/off" snap, just however fast you're
 		-- actually going right now.
-		local moveRatio = math.clamp(horizontalSpeed / Config.Player.WalkSpeed, 0, 1)
+		local moveRatio = math.clamp(smoothedSpeed / Config.Player.WalkSpeed, 0, 1)
 		local sprintT = math.clamp(
-			(horizontalSpeed - Config.Player.WalkSpeed) / math.max(Config.Player.SprintSpeed - Config.Player.WalkSpeed, 1),
+			(smoothedSpeed - Config.Player.WalkSpeed) / math.max(Config.Player.SprintSpeed - Config.Player.WalkSpeed, 1),
 			0,
 			1
 		)
