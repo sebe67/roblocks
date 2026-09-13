@@ -278,6 +278,11 @@ Config.Monsters = {
 	},
 }
 
+-- How far (in studs) a player can wander from a station's anchor while
+-- playing its minigame before it auto-cancels. Deliberately not a movement
+-- freeze -- you can still bail and run if a monster shows up mid-minigame.
+Config.MinigameLeashDistance = 16
+
 Config.Minigames = {
 	{
 		id = "RestockShelves",

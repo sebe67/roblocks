@@ -188,10 +188,20 @@ function MazeGenerator.Generate()
 		end
 	end
 
-	local function addShelfDetail(wallPart, horizontal)
+	local function addShelfDetail(wallPart, dir)
 		if math.random() > 0.4 then
 			return
 		end
+		local horizontal = (dir == "N" or dir == "S")
+		local depth = 1
+		-- Offset the shelf off the wall's own centerline toward whichever
+		-- face actually opens into this cell's room, so it protrudes from
+		-- the wall instead of being buried inside it (which was causing
+		-- z-fighting flicker between the shelf and its parent wall).
+		local sign = (dir == "N" or dir == "W") and 1 or -1
+		local thickness = horizontal and wallPart.Size.Z or wallPart.Size.X
+		local outwardOffset = sign * (thickness / 2 + depth / 2)
+
 		for i, frac in ipairs({ 0.35, 0.65 }) do
 			local shelf = Instance.new("Part")
 			shelf.Name = "Shelf"
@@ -200,11 +210,12 @@ function MazeGenerator.Generate()
 			shelf.Material = Enum.Material.Metal
 			shelf.Color = Color3.fromRGB(90, 90, 96)
 			if horizontal then
-				shelf.Size = Vector3.new(wallPart.Size.X * 0.9, 0.3, 1)
+				shelf.Size = Vector3.new(wallPart.Size.X * 0.9, 0.3, depth)
+				shelf.CFrame = wallPart.CFrame * CFrame.new(0, wallPart.Size.Y * (frac - 0.5), outwardOffset)
 			else
-				shelf.Size = Vector3.new(1, 0.3, wallPart.Size.Z * 0.9)
+				shelf.Size = Vector3.new(depth, 0.3, wallPart.Size.Z * 0.9)
+				shelf.CFrame = wallPart.CFrame * CFrame.new(outwardOffset, wallPart.Size.Y * (frac - 0.5), 0)
 			end
-			shelf.CFrame = wallPart.CFrame * CFrame.new(0, wallPart.Size.Y * (frac - 0.5), 0)
 			shelf.Parent = wallPart
 		end
 	end
@@ -236,11 +247,15 @@ function MazeGenerator.Generate()
 		local center = cellToWorld(x, y)
 		local horizontal = (dir == "N" or dir == "S") -- wall spans along X
 		local size, cf
+		-- N/S walls are trimmed by one wallThickness so they meet E/W walls
+		-- edge-to-edge at corners instead of overlapping into them --
+		-- overlapping coplanar faces there was causing z-fighting flicker
+		-- at nearly every corner in the maze.
 		if dir == "N" then
-			size = Vector3.new(cellSize, wallHeight, wallThickness)
+			size = Vector3.new(cellSize - wallThickness, wallHeight, wallThickness)
 			cf = CFrame.new(center + Vector3.new(0, wallHeight / 2, -cellSize / 2))
 		elseif dir == "S" then
-			size = Vector3.new(cellSize, wallHeight, wallThickness)
+			size = Vector3.new(cellSize - wallThickness, wallHeight, wallThickness)
 			cf = CFrame.new(center + Vector3.new(0, wallHeight / 2, cellSize / 2))
 		elseif dir == "E" then
 			size = Vector3.new(wallThickness, wallHeight, cellSize)
@@ -259,7 +274,7 @@ function MazeGenerator.Generate()
 		wall.Color = WALL_PALETTE[math.random(1, #WALL_PALETTE)]
 		wall.Parent = folders.Walls
 
-		addShelfDetail(wall, horizontal)
+		addShelfDetail(wall, dir)
 		maybeAddSign(wall)
 	end
 

@@ -98,6 +98,23 @@ function MinigameService:_tryStart(player, station)
 	end)
 	station.noiseThread = noiseThread
 
+	-- Auto-cancel (not freeze) if the player wanders too far from the
+	-- station -- deliberately not a movement lock, so you can still bail
+	-- and run if a monster shows up mid-minigame.
+	task.spawn(function()
+		while station.inUse and station.activePlayer == player do
+			task.wait(0.5)
+			if station.inUse and station.activePlayer == player then
+				local character = player.Character
+				local root = character and character:FindFirstChild("HumanoidRootPart")
+				if not root or (root.Position - station.anchor.Position).Magnitude > Config.MinigameLeashDistance then
+					self.cancelEvent:FireClient(player)
+					self:_onResult(player, station.id, false)
+				end
+			end
+		end
+	end)
+
 	task.delay(station.config.duration + 2, function()
 		if station.inUse and station.activePlayer == player then
 			self:_onResult(player, station.id, false)

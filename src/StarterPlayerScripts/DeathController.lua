@@ -2,6 +2,7 @@ local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local Net = require(game:GetService("ReplicatedStorage").Shared.Net)
 local SoundKit = require(game:GetService("ReplicatedStorage").Shared.SoundKit)
 local UIUtil = require(script.Parent.UIUtil)
+local CursorLock = require(script.Parent.CursorLock)
 
 local DeathController = {}
 
@@ -61,18 +62,31 @@ function DeathController.Init(context)
 
 	local respawnEvent = Net.GetEvent("RequestRespawn")
 	local spectateEvent = Net.GetEvent("RequestSpectate")
+	local menuOpen = false
+
+	local function closeMenu()
+		gui.Enabled = false
+		if menuOpen then
+			menuOpen = false
+			CursorLock.Pop(context.player)
+		end
+	end
 
 	respawnBtn.MouseButton1Click:Connect(function()
 		SoundKit.PlayUI(Config.Sounds.UIClick, { Volume = 0.5 })
 		respawnEvent:FireServer()
-		gui.Enabled = false
+		closeMenu()
 	end)
 	spectateBtn.MouseButton1Click:Connect(function()
 		SoundKit.PlayUI(Config.Sounds.UIClick, { Volume = 0.5 })
 		spectateEvent:FireServer()
-		gui.Enabled = false
+		closeMenu()
 	end)
 
+	-- The camera locks the mouse to screen-center in first person (and
+	-- re-locks it every frame even if we fight it once), so there's no way
+	-- to click Respawn/Spectate without dropping out of that mode while
+	-- this menu is up.
 	Net.GetEvent("ShowDeathMenu").OnClientEvent:Connect(function(monsterId)
 		if monsterId == "TimedOut" then
 			title.Text = "THE STORE CLOSED. YOU DID NOT MAKE IT."
@@ -83,6 +97,8 @@ function DeathController.Init(context)
 			subtitle.Text = def and def.flavor or ""
 		end
 		gui.Enabled = true
+		menuOpen = true
+		CursorLock.Push(context.player)
 	end)
 
 	local escapedGui = UIUtil.screenGui("EscapedGui")
@@ -107,7 +123,7 @@ function DeathController.Init(context)
 	end)
 
 	Net.GetEvent("RoundSpawn").OnClientEvent:Connect(function()
-		gui.Enabled = false
+		closeMenu()
 		escapedGui.Enabled = false
 	end)
 end
