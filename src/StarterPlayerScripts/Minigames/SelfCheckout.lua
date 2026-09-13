@@ -39,12 +39,23 @@ function SelfCheckout.Play(container, config, onComplete)
 	})
 	track.Parent = container
 
+	-- Widened from 0.16 to absorb input/render latency between the marker
+	-- crossing the zone and the click actually registering, and randomized
+	-- (here and again after every successful scan) so the target isn't
+	-- always dead-center and memorizable.
+	local ZONE_WIDTH = 0.22
 	local greenZone = UIUtil.frame({
-		Size = UDim2.new(0.16, 0, 1, 0),
+		Size = UDim2.new(ZONE_WIDTH, 0, 1, 0),
 		Position = UDim2.new(0.42, 0, 0, 0),
 		BackgroundColor3 = Color3.fromRGB(60, 190, 90),
 	})
 	greenZone.Parent = track
+
+	local function randomizeZone()
+		local maxStart = 1 - ZONE_WIDTH
+		greenZone.Position = UDim2.new(math.random() * maxStart, 0, 0, 0)
+	end
+	randomizeZone()
 
 	local marker = UIUtil.frame({
 		Size = UDim2.new(0.02, 0, 1.2, 0),
@@ -85,6 +96,8 @@ function SelfCheckout.Play(container, config, onComplete)
 			if scans >= config.roundsToWin then
 				finished = true
 				onComplete(true)
+			else
+				randomizeZone()
 			end
 		else
 			updateProgressLabel("MISSED! ")

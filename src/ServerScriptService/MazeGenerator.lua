@@ -380,19 +380,44 @@ function MazeGenerator.Generate()
 		label.Parent = gui
 	end
 
+	-- True if the boundary at (x,y) facing dir has actual wall material on
+	-- it -- either a solid wall or a doorway (whose stubs always reach the
+	-- corners even though the middle is open). False for a hallway gap, a
+	-- plain open interior boundary, or anything off the grid edge.
+	local function hasWallMaterial(x, y, dir)
+		if x < 1 or x > W or y < 1 or y > H then
+			return false
+		end
+		if cells[x][y][dir] then
+			return true
+		end
+		local style = edgeStyle[x] and edgeStyle[x][y] and edgeStyle[x][y][dir]
+		return style == "doorway"
+	end
+
 	local function buildWall(x, y, dir)
 		local center = cellToWorld(x, y)
 		local size, cf
-		-- N/S walls are trimmed by one wallThickness so they meet E/W walls
-		-- edge-to-edge at corners instead of overlapping into them --
-		-- overlapping coplanar faces there was causing z-fighting flicker
-		-- at nearly every corner in the maze.
-		if dir == "N" then
-			size = Vector3.new(cellSize - wallThickness, wallHeight, wallThickness)
-			cf = CFrame.new(center + Vector3.new(0, wallHeight / 2, -cellSize / 2))
-		elseif dir == "S" then
-			size = Vector3.new(cellSize - wallThickness, wallHeight, wallThickness)
-			cf = CFrame.new(center + Vector3.new(0, wallHeight / 2, cellSize / 2))
+		if dir == "N" or dir == "S" then
+			-- E/W walls are always full-length (see below), so an N/S wall
+			-- only needs to trim half a wallThickness off an end when a
+			-- perpendicular wall/doorway actually exists there to meet --
+			-- checking BOTH rows that share that corner, since either one's
+			-- E/W boundary can supply that material. Skipping the trim when
+			-- neither does (common now that big rooms leave long open runs)
+			-- is what closes the gaps that used to appear along those runs;
+			-- trimming when one does is what avoids z-fighting at a true
+			-- corner.
+			local neighborY = (dir == "N") and (y - 1) or (y + 1)
+			local westTrim = (hasWallMaterial(x, y, "W") or hasWallMaterial(x, neighborY, "W")) and (wallThickness / 2)
+				or 0
+			local eastTrim = (hasWallMaterial(x, y, "E") or hasWallMaterial(x, neighborY, "E")) and (wallThickness / 2)
+				or 0
+			local length = cellSize - westTrim - eastTrim
+			local xOffset = (eastTrim - westTrim) / 2
+			local z = (dir == "N") and (-cellSize / 2) or (cellSize / 2)
+			size = Vector3.new(length, wallHeight, wallThickness)
+			cf = CFrame.new(center + Vector3.new(xOffset, wallHeight / 2, z))
 		elseif dir == "E" then
 			size = Vector3.new(wallThickness, wallHeight, cellSize)
 			cf = CFrame.new(center + Vector3.new(cellSize / 2, wallHeight / 2, 0))
@@ -418,16 +443,6 @@ function MazeGenerator.Generate()
 
 	local function buildDoorway(x, y, dir)
 		local center = cellToWorld(x, y)
-		local horizontal = (dir == "N" or dir == "S")
-		-- Matches buildWall's convention: N/S stubs are trimmed by
-		-- wallThickness (to butt against E/W walls at corners without
-		-- overlapping/z-fighting), E/W stubs reach the full corner.
-		local stubLength = horizontal and ((cellSize - wallThickness - doorwayWidth) / 2)
-			or ((cellSize - doorwayWidth) / 2)
-		if stubLength <= 0.5 then
-			return -- doorway too wide for this cell size; leave fully open
-		end
-		local edgeOffset = doorwayWidth / 2 + stubLength / 2
 
 		local function makeStub(offsetX, offsetZ, sizeX, sizeZ)
 			local stub = Instance.new("Part")
@@ -441,18 +456,41 @@ function MazeGenerator.Generate()
 			return stub
 		end
 
-		if dir == "N" then
-			makeStub(-edgeOffset, -cellSize / 2, stubLength, wallThickness)
-			makeStub(edgeOffset, -cellSize / 2, stubLength, wallThickness)
-		elseif dir == "S" then
-			makeStub(-edgeOffset, cellSize / 2, stubLength, wallThickness)
-			makeStub(edgeOffset, cellSize / 2, stubLength, wallThickness)
-		elseif dir == "E" then
-			makeStub(cellSize / 2, -edgeOffset, wallThickness, stubLength)
-			makeStub(cellSize / 2, edgeOffset, wallThickness, stubLength)
-		else -- W
-			makeStub(-cellSize / 2, -edgeOffset, wallThickness, stubLength)
-			makeStub(-cellSize / 2, edgeOffset, wallThickness, stubLength)
+		if dir == "E" or dir == "W" then
+			-- E/W stubs always reach their full corner, matching buildWall's
+			-- E/W convention.
+			local stubLength = (cellSize - doorwayWidth) / 2
+			if stubLength <= 0.5 then
+				return
+			end
+			local edgeOffset = doorwayWidth / 2 + stubLength / 2
+			local xOff = (dir == "E") and (cellSize / 2) or (-cellSize / 2)
+			makeStub(xOff, -edgeOffset, wallThickness, stubLength)
+			makeStub(xOff, edgeOffset, wallThickness, stubLength)
+			return
+		end
+
+		-- N/S: each stub's outer (corner-facing) end independently trims by
+		-- half a wallThickness only when a perpendicular wall/doorway
+		-- actually meets it there -- same rule as buildWall -- so a doorway
+		-- along an open room boundary reaches the full corner instead of
+		-- leaving the same kind of gap the walls used to.
+		local neighborY = (dir == "N") and (y - 1) or (y + 1)
+		local z = (dir == "N") and (-cellSize / 2) or (cellSize / 2)
+
+		local westTrim = (hasWallMaterial(x, y, "W") or hasWallMaterial(x, neighborY, "W")) and (wallThickness / 2)
+			or 0
+		local eastTrim = (hasWallMaterial(x, y, "E") or hasWallMaterial(x, neighborY, "E")) and (wallThickness / 2)
+			or 0
+
+		local westStubLength = cellSize / 2 - doorwayWidth / 2 - westTrim
+		local eastStubLength = cellSize / 2 - doorwayWidth / 2 - eastTrim
+
+		if westStubLength > 0.5 then
+			makeStub(-(doorwayWidth / 2 + westStubLength / 2), z, westStubLength, wallThickness)
+		end
+		if eastStubLength > 0.5 then
+			makeStub(doorwayWidth / 2 + eastStubLength / 2, z, eastStubLength, wallThickness)
 		end
 	end
 

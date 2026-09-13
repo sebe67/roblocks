@@ -4,6 +4,7 @@
 -- overall timer runs out.
 
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local SoundKit = require(game:GetService("ReplicatedStorage").Shared.SoundKit)
 local UIUtil = require(script.Parent.Parent.UIUtil)
@@ -59,16 +60,45 @@ function FlatPackAssembly.Play(container, config, onComplete)
 
 	local playNextRound
 
+	-- Click-confirmation flash: a white ring pulse + a quick size "pop" on
+	-- whichever panel was just clicked, independent of the round's own
+	-- watch/replay color animation, so the player always sees their click
+	-- registered even before the correct/wrong outcome resolves.
+	local function flashClick(btn)
+		local stroke = btn:FindFirstChildOfClass("UIStroke")
+		local scale = btn:FindFirstChildOfClass("UIScale")
+		if stroke then
+			stroke.Transparency = 0
+			TweenService:Create(stroke, TweenInfo.new(0.25, Enum.EasingStyle.Quad), { Transparency = 1 }):Play()
+		end
+		if scale then
+			scale.Scale = 1.15
+			TweenService:Create(scale, TweenInfo.new(0.15, Enum.EasingStyle.Quad), { Scale = 1 }):Play()
+		end
+	end
+
 	local panels = {}
 	for i, color in ipairs(PANEL_COLORS) do
 		local btn = UIUtil.button({ BackgroundColor3 = color, Text = "", AutoButtonColor = false })
 		btn.Parent = panelHolder
 		panels[i] = btn
+
+		local stroke = Instance.new("UIStroke")
+		stroke.Thickness = 5
+		stroke.Color = Color3.new(1, 1, 1)
+		stroke.Transparency = 1
+		stroke.Parent = btn
+
+		local scale = Instance.new("UIScale")
+		scale.Scale = 1
+		scale.Parent = btn
+
 		btn.MouseButton1Click:Connect(function()
 			if not accepting or finished then
 				return
 			end
 			SoundKit.PlayUI(Config.Sounds.UIClick, { Volume = 0.4 })
+			flashClick(btn)
 			if i == sequence[playerIndex] then
 				playerIndex += 1
 				if playerIndex > #sequence then

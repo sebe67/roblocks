@@ -64,10 +64,56 @@ function MinigameController.Init(context)
 	})
 	playArea.Parent = container
 
+	-- Small toast that outlives the minigame window itself (it closes
+	-- immediately) so the player still sees why it ended.
+	local toastGui = UIUtil.screenGui("MinigameToastGui")
+	toastGui.DisplayOrder = 21
+	toastGui.Parent = context.playerGui
+
+	local toastLabel = UIUtil.label({
+		Size = UDim2.new(0.5, 0, 0.07, 0),
+		Position = UDim2.new(0.25, 0, 0.1, 0),
+		BackgroundTransparency = 0.1,
+		BackgroundColor3 = Color3.fromRGB(20, 20, 24),
+		TextScaled = true,
+		TextStrokeTransparency = 0,
+		Visible = false,
+	})
+	local toastCorner = Instance.new("UICorner")
+	toastCorner.CornerRadius = UDim.new(0, 8)
+	toastCorner.Parent = toastLabel
+	toastLabel.Parent = toastGui
+
+	local toastToken = 0
+	local function showToast(text, color)
+		toastToken += 1
+		local myToken = toastToken
+		toastLabel.Text = text
+		toastLabel.TextColor3 = color or Color3.fromRGB(255, 255, 255)
+		toastLabel.Visible = true
+		task.delay(2.2, function()
+			if toastToken == myToken then
+				toastLabel.Visible = false
+			end
+		end)
+	end
+
+	local REASON_MESSAGES = {
+		complete = { text = "TASK COMPLETE!", color = Color3.fromRGB(90, 230, 120) },
+		tooFar = { text = "You moved too far away from the task.", color = Color3.fromRGB(230, 190, 70) },
+		gaveup = { text = "You gave up on the task.", color = Color3.fromRGB(230, 190, 70) },
+		failed = { text = "Task failed.", color = Color3.fromRGB(230, 80, 80) },
+	}
+
 	local resultEvent = Net.GetEvent("MinigameResult")
 	local activeStationId, activeCleanup
 
-	local function endGame(success)
+	-- reason is optional: games that just call onComplete(true/false) with
+	-- no reason get sensible defaults ("complete" / "failed" -- covers both
+	-- running out of time and blowing the task's own fail condition), while
+	-- the Give Up button and the server's leash-distance cancel pass their
+	-- own specific reason through.
+	local function endGame(success, reason)
 		if not activeStationId then
 			return
 		end
@@ -83,16 +129,21 @@ function MinigameController.Init(context)
 		for _, child in ipairs(playArea:GetChildren()) do
 			child:Destroy()
 		end
+
+		local info = REASON_MESSAGES[reason or (success and "complete" or "failed")]
+		if info then
+			showToast(info.text, info.color)
+		end
 	end
 
 	giveUpBtn.MouseButton1Click:Connect(function()
 		SoundKit.PlayUI(Config.Sounds.UIClick, { Volume = 0.5 })
-		endGame(false)
+		endGame(false, "gaveup")
 	end)
 
 	Net.GetEvent("StartMinigame").OnClientEvent:Connect(function(stationId, config)
 		if activeStationId then
-			endGame(false)
+			endGame(false, "gaveup")
 		end
 		activeStationId = stationId
 		titleLabel.Text = config.stationName .. " -- " .. config.description
@@ -104,13 +155,13 @@ function MinigameController.Init(context)
 			activeCleanup = gameModule.Play(playArea, config, endGame)
 		else
 			task.delay(1, function()
-				endGame(false)
+				endGame(false, "failed")
 			end)
 		end
 	end)
 
 	Net.GetEvent("CancelMinigame").OnClientEvent:Connect(function()
-		endGame(false)
+		endGame(false, "tooFar")
 	end)
 end
 

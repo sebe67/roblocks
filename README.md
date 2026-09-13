@@ -52,6 +52,11 @@ or bake ahead of time.
   roughly-quadrant color "wings" (`Config.Maze.ColorZones`) so wall color
   reads as a sense of place instead of random noise, with an occasional
   off-palette wall/shelf (`ZoneAccentChance`) so it's not forced monotone.
+  Wall/doorway segments trim only the end that actually meets a
+  perpendicular wall or doorway (`hasWallMaterial` in `MazeGenerator.lua`)
+  instead of always shaving a fixed amount off both ends — the old
+  always-trim approach left thin gaps along the long open room boundaries
+  this room-based layout produces.
   Plus IKEA-blue/yellow shelf units, fake-Swedish aisle signage
   (`GRÖNKVIST`, `MÖRKHUS`, ...), a lobby/entrance, a locked "loading dock"
   exit, and six minigame rooms.
@@ -242,7 +247,7 @@ src/StarterPlayerScripts/
   JumpscareController.lua            Full-screen jumpscare on catch + catch/scream audio
   DeathController.lua                Death/respawn/spectate menu + escape banner
   SpectateController.lua             Camera-follow spectating with target cycling
-  MinigameController.lua             Minigame overlay + dispatch to the 6 minigame modules + success/fail audio
+  MinigameController.lua             Minigame overlay + dispatch to the 6 minigame modules + success/fail audio/toast
   HUDController.lua                  Round phase, station progress, results screen, Overtime banner/tint
   Minigames/
     RestockShelves.lua
