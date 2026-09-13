@@ -28,6 +28,8 @@ function AmbienceController.Init(context)
 		MaxDistance = 10000,
 	})
 
+	local overtimeActive = false
+
 	local nextProximityCheck = 0
 	RunService.Heartbeat:Connect(function()
 		local now = os.clock()
@@ -60,6 +62,9 @@ function AmbienceController.Init(context)
 
 		local far, near = sounds.HeartbeatMaxDistance, sounds.HeartbeatMinDistance
 		local t = 1 - math.clamp((nearest - near) / math.max(far - near, 1), 0, 1)
+		if overtimeActive then
+			t = math.max(t, 0.6) -- never lets you forget, even mid-corridor
+		end
 		heartbeat.Volume = t * 0.8
 		heartbeat.PlaybackSpeed = 1 + t * 0.5
 		if t > 0 and not heartbeat.Playing then
@@ -72,7 +77,15 @@ function AmbienceController.Init(context)
 			SoundKit.PlayUI(sounds.IntermissionStart, { Volume = 0.5 })
 		elseif phase == "Playing" then
 			SoundKit.PlayUI(sounds.RoundStart, { Volume = 0.8 })
+			overtimeActive = false
+		elseif phase == "Results" then
+			overtimeActive = false
 		end
+	end)
+
+	Net.GetEvent("OvertimeStarted").OnClientEvent:Connect(function()
+		overtimeActive = true
+		SoundKit.PlayUI(sounds.OvertimeWarning, { Volume = 1 })
 	end)
 
 	Net.GetEvent("ExitUnlocked").OnClientEvent:Connect(function()

@@ -37,6 +37,9 @@ function SoundKit.CreateLoop3D(part, soundId, props)
 	sound.PlaybackSpeed = props.PlaybackSpeed or 1
 	sound.RollOffMaxDistance = props.MaxDistance or 60
 	sound.RollOffMode = Enum.RollOffMode.InverseTapered
+	if props.SoundGroup then
+		sound.SoundGroup = props.SoundGroup
+	end
 	sound.Parent = part
 	if soundId and soundId ~= "" then
 		sound:Play()
@@ -57,6 +60,9 @@ function SoundKit.PlayAt(part, soundId, props)
 	sound.PlaybackSpeed = props.PlaybackSpeed or 1
 	sound.RollOffMaxDistance = props.MaxDistance or 60
 	sound.RollOffMode = Enum.RollOffMode.InverseTapered
+	if props.SoundGroup then
+		sound.SoundGroup = props.SoundGroup
+	end
 	sound.Parent = part
 	sound:Play()
 	Debris:AddItem(sound, 10)

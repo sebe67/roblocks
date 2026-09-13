@@ -47,6 +47,16 @@ function JumpscareController.Init(context)
 	})
 	flavorLabel.Parent = gui
 
+	local overtimeActive = false
+	Net.GetEvent("OvertimeStarted").OnClientEvent:Connect(function()
+		overtimeActive = true
+	end)
+	Net.GetEvent("RoundPhase").OnClientEvent:Connect(function(phase)
+		if phase == "Playing" or phase == "Results" then
+			overtimeActive = false
+		end
+	end)
+
 	Net.GetEvent("Jumpscare").OnClientEvent:Connect(function(monsterId)
 		local def = monsterById[monsterId]
 		if not def then
@@ -60,9 +70,14 @@ function JumpscareController.Init(context)
 		nameLabel.TextColor3 = def.accentColor
 		flavorLabel.Text = def.flavor
 
-		SoundKit.PlayUI(Config.Sounds.Caught, { Volume = 0.8 })
+		-- During Overtime everything gets deeper/distorted for extra dread
+		-- -- these two are 2D client sounds so they don't go through the
+		-- server's shared "Monsters" SoundGroup; PlaybackSpeed is the cheap
+		-- equivalent pitch-down for them specifically.
+		local pitch = overtimeActive and 0.7 or 1
+		SoundKit.PlayUI(Config.Sounds.Caught, { Volume = 0.8, PlaybackSpeed = pitch })
 		task.delay(0.15, function()
-			SoundKit.PlayUI(def.jumpscareSoundId, { Volume = 1 })
+			SoundKit.PlayUI(def.jumpscareSoundId, { Volume = 1, PlaybackSpeed = pitch })
 		end)
 
 		local camera = workspace.CurrentCamera

@@ -7,11 +7,17 @@ local CursorLock = require(script.Parent.CursorLock)
 local RestockShelves = require(script.Parent.Minigames.RestockShelves)
 local FlatPackAssembly = require(script.Parent.Minigames.FlatPackAssembly)
 local SelfCheckout = require(script.Parent.Minigames.SelfCheckout)
+local InventoryCount = require(script.Parent.Minigames.InventoryCount)
+local CustomerRush = require(script.Parent.Minigames.CustomerRush)
+local ForkliftCertification = require(script.Parent.Minigames.ForkliftCertification)
 
 local GAMES = {
 	RestockShelves = RestockShelves,
 	FlatPackAssembly = FlatPackAssembly,
 	SelfCheckout = SelfCheckout,
+	InventoryCount = InventoryCount,
+	CustomerRush = CustomerRush,
+	ForkliftCertification = ForkliftCertification,
 }
 
 local MinigameController = {}

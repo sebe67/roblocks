@@ -1,3 +1,5 @@
+local Lighting = game:GetService("Lighting")
+local TweenService = game:GetService("TweenService")
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local Net = require(game:GetService("ReplicatedStorage").Shared.Net)
 local UIUtil = require(script.Parent.UIUtil)
@@ -49,6 +51,27 @@ function HUDController.Init(context)
 	})
 	banner.Parent = gui
 
+	-- Red vignette for Overtime -- a plain ColorCorrectionEffect the client
+	-- owns and tweens, separate from anything the server touches on
+	-- Lighting directly (fog/brightness).
+	local overtimeTint = Lighting:FindFirstChild("OvertimeTint")
+	if not overtimeTint then
+		overtimeTint = Instance.new("ColorCorrectionEffect")
+		overtimeTint.Name = "OvertimeTint"
+		overtimeTint.TintColor = Color3.new(1, 1, 1)
+		overtimeTint.Brightness = 0
+		overtimeTint.Saturation = 0
+		overtimeTint.Parent = Lighting
+	end
+	local overtimeActive = false
+
+	local function setOvertimeTint(active)
+		local goal = active
+				and { TintColor = Config.Overtime.TintColor, Saturation = -0.3, Brightness = -0.05 }
+			or { TintColor = Color3.new(1, 1, 1), Saturation = 0, Brightness = 0 }
+		TweenService:Create(overtimeTint, TweenInfo.new(1.5), goal):Play()
+	end
+
 	Net.GetEvent("RoundPhase").OnClientEvent:Connect(function(phase, data)
 		if phase == "Waiting" then
 			phaseLabel.Text = "Waiting for more players..."
@@ -56,10 +79,30 @@ function HUDController.Init(context)
 			phaseLabel.Text = string.format("Next round starts in %d...", data.timeLeft)
 		elseif phase == "Playing" then
 			phaseLabel.Text = ""
+			phaseLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 			progressLabel.Text = "Stations cleared: 0 / 0"
+			overtimeActive = false
+			setOvertimeTint(false)
 		elseif phase == "Results" then
 			phaseLabel.Text = "Round over."
+			overtimeActive = false
+			setOvertimeTint(false)
 		end
+	end)
+
+	Net.GetEvent("OvertimeStarted").OnClientEvent:Connect(function()
+		overtimeActive = true
+		setOvertimeTint(true)
+		banner.TextColor3 = Color3.fromRGB(255, 60, 60)
+		banner.Text = Config.Overtime.WarningText
+		banner.Visible = true
+		task.delay(8, function()
+			if overtimeActive then
+				banner.Visible = false
+			end
+		end)
+		phaseLabel.TextColor3 = Color3.fromRGB(255, 60, 60)
+		phaseLabel.Text = "OVERTIME"
 	end)
 
 	Net.GetEvent("MinigameProgress").OnClientEvent:Connect(function(completed, total, stationName)

@@ -129,11 +129,32 @@ function MazeGenerator.Generate()
 
 	local entranceCell = { x = 1, y = 1 }
 	local exitCell = { x = W, y = H }
-	local minigameCells = {
-		{ x = math.clamp(math.floor(W / 4), 2, W - 1), y = math.clamp(math.floor(H / 2), 2, H - 1) },
-		{ x = math.clamp(math.floor(W / 2), 2, W - 1), y = math.clamp(math.floor(H * 3 / 4), 2, H - 1) },
-		{ x = math.clamp(math.floor(W * 3 / 4), 2, W - 1), y = math.clamp(math.floor(H / 4), 2, H - 1) },
-	}
+
+	-- Spreads however many minigame stations Config.Minigames defines
+	-- roughly evenly across the grid as a cols x rows lattice, so adding a
+	-- 4th/7th/10th station just needs a Config entry -- no placement code
+	-- to update.
+	local minigameCells = {}
+	do
+		local count = #Config.Minigames
+		local cols = math.ceil(math.sqrt(count))
+		local rows = math.ceil(count / cols)
+		local placed = 0
+		for r = 1, rows do
+			for c = 1, cols do
+				if placed >= count then
+					break
+				end
+				placed += 1
+				local fracX = c / (cols + 1)
+				local fracY = r / (rows + 1)
+				table.insert(minigameCells, {
+					x = math.clamp(math.floor(fracX * W), 2, W - 1),
+					y = math.clamp(math.floor(fracY * H), 2, H - 1),
+				})
+			end
+		end
+	end
 
 	-- Floors + ceilings
 	for x = 1, W do
@@ -278,6 +299,69 @@ function MazeGenerator.Generate()
 		maybeAddSign(wall)
 	end
 
+	-- Rail boulevards (see forceOpenRailLattice) stay fully open on purpose
+	-- -- they're the wide main aisles. Every other open passage between
+	-- cells gets a proper doorway-sized gap instead of the whole room edge,
+	-- so you can't see clear across into three other rooms from a doorway.
+	local function isBoulevardEdge(dir, x, y)
+		if dir == "N" or dir == "S" then
+			return isRailIndex(x)
+		end
+		return isRailIndex(y)
+	end
+
+	local doorwayWidth = Config.Maze.DoorwayWidth
+
+	local function buildDoorway(x, y, dir)
+		local center = cellToWorld(x, y)
+		local horizontal = (dir == "N" or dir == "S")
+		-- Matches buildWall's convention: N/S stubs are trimmed by
+		-- wallThickness (to butt against E/W walls at corners without
+		-- overlapping/z-fighting), E/W stubs reach the full corner.
+		local stubLength = horizontal and ((cellSize - wallThickness - doorwayWidth) / 2)
+			or ((cellSize - doorwayWidth) / 2)
+		if stubLength <= 0.5 then
+			return -- doorway too wide for this cell size; leave fully open
+		end
+		local edgeOffset = doorwayWidth / 2 + stubLength / 2
+
+		local function makeStub(offsetX, offsetZ, sizeX, sizeZ)
+			local stub = Instance.new("Part")
+			stub.Name = string.format("Doorway_%d_%d_%s", x, y, dir)
+			stub.Anchored = true
+			stub.Size = Vector3.new(sizeX, wallHeight, sizeZ)
+			stub.CFrame = CFrame.new(center + Vector3.new(offsetX, wallHeight / 2, offsetZ))
+			stub.Material = math.random() < 0.3 and Enum.Material.Wood or Enum.Material.SmoothPlastic
+			stub.Color = WALL_PALETTE[math.random(1, #WALL_PALETTE)]
+			stub.Parent = folders.Walls
+			return stub
+		end
+
+		if dir == "N" then
+			makeStub(-edgeOffset, -cellSize / 2, stubLength, wallThickness)
+			makeStub(edgeOffset, -cellSize / 2, stubLength, wallThickness)
+		elseif dir == "S" then
+			makeStub(-edgeOffset, cellSize / 2, stubLength, wallThickness)
+			makeStub(edgeOffset, cellSize / 2, stubLength, wallThickness)
+		elseif dir == "E" then
+			makeStub(cellSize / 2, -edgeOffset, wallThickness, stubLength)
+			makeStub(cellSize / 2, edgeOffset, wallThickness, stubLength)
+		else -- W
+			makeStub(-cellSize / 2, -edgeOffset, wallThickness, stubLength)
+			makeStub(-cellSize / 2, edgeOffset, wallThickness, stubLength)
+		end
+	end
+
+	-- Wall present -> solid wall. Open and not a boulevard -> narrow
+	-- doorway. Open and a boulevard -> nothing (fully open main aisle).
+	local function processEdge(x, y, dir)
+		if cells[x][y][dir] then
+			buildWall(x, y, dir)
+		elseif not isBoulevardEdge(dir, x, y) then
+			buildDoorway(x, y, dir)
+		end
+	end
+
 	local exitDoor
 	local escapeZone
 
@@ -332,18 +416,13 @@ function MazeGenerator.Generate()
 			if x == exitCell.x and y == exitCell.y and cells[x][y].S then
 				buildExitDoor(x, y)
 			end
-			if cells[x][y].N then
-				buildWall(x, y, "N")
+			processEdge(x, y, "N")
+			processEdge(x, y, "W")
+			if y == H and x ~= exitCell.x then
+				processEdge(x, y, "S")
 			end
-
-			if cells[x][y].W then
-				buildWall(x, y, "W")
-			end
-			if y == H and x ~= exitCell.x and cells[x][y].S then
-				buildWall(x, y, "S")
-			end
-			if x == W and cells[x][y].E then
-				buildWall(x, y, "E")
+			if x == W then
+				processEdge(x, y, "E")
 			end
 		end
 	end

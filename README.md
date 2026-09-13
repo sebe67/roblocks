@@ -42,9 +42,12 @@ or bake ahead of time.
 - **Procedural store/maze** (`MazeGenerator.lua`): a recursive-backtracker
   maze with extra knocked-down walls for shortcuts, IKEA-blue/yellow shelf
   units with random fake-Swedish aisle signage (`GRÖNKVIST`, `MÖRKHUS`, ...),
-  a lobby/entrance, a locked "loading dock" exit, and three minigame rooms.
+  a lobby/entrance, a locked "loading dock" exit, and six minigame rooms.
   A lattice of wide, fully-open "rail" rows/columns cuts through it as main
-  walkways (see Thomas, below).
+  walkways (see Thomas, below); every other passage between rooms is a
+  narrow doorway (`Config.Maze.DoorwayWidth`) rather than the whole room
+  edge, so you can't see clear across into three other rooms at once. 22x22
+  cells at 22 studs each — big enough to spread 8 monsters out.
 - **Lighting** (`StoreTheme.lua`): dim ambient + fog + a subtle atmosphere,
   with only roughly 1-in-3 ceiling fixtures actually lit, plus some dead
   fixtures that flicker briefly at random. Dim, not pitch black.
@@ -100,16 +103,38 @@ keep expanding past 8. Adding one is just a new entry in `Config.Monsters`
 
 ## The win condition (per your call)
 
-Three stations — **Restock: Aisle of Regret**, **Flat-Pack Rage Build**,
-and **Self-Checkout Vibe Check** — are scattered through the maze. Walking
-up and holding the ProximityPrompt starts a short, real minigame that needs
-actual attention (color-matching under time pressure, a growing
-Simon-says sequence, and a timing-based scanner respectively). While one is
-active, it periodically "pings" a radius around the station, pulling any
-monster within range into Investigate — so playing a station is a genuine
-risk/reward decision, not a safe minigame break. Clear all three and the
-loading dock door (`ExitDoor`) tweens open; touch the zone just past it to
-escape and win.
+Six stations — **Restock: Aisle of Regret** (color-matching), **Flat-Pack
+Rage Build** (growing Simon-says sequence), **Self-Checkout Vibe Check**
+(timing-based scanner), **Inventory Count** (memorize-then-recall),
+**Customer Service Rush** (multi-target reaction), and **Forklift
+Certification** (continuous hold-to-steer tracking) — are spread evenly
+across the maze, each a genuinely different interaction style. Walking up
+and holding the ProximityPrompt starts one; while it's active it
+periodically "pings" a radius around the station, pulling any monster
+within range into Investigate — so playing a station is a real risk/reward
+decision, not a safe minigame break. Clear all six and the loading dock
+door (`ExitDoor`) tweens open; touch the zone just past it to escape and
+win.
+
+Adding a 7th is: a new client module under `Minigames/`, a line in
+`MinigameController.lua`'s `GAMES` table, and a `Config.Minigames` entry —
+station placement (`MazeGenerator.lua`) automatically spreads however many
+entries exist across the grid, no placement code to touch.
+
+## Overtime
+
+If nobody's escaped after `Config.Round.MaxRoundTime` (10 minutes), the
+round doesn't just end — every monster goes into Overtime: much faster,
+omniscient targeting of whoever's nearest with no more sight/range checks,
+and every monster sound gets pitched down and distorted (via a shared
+SoundGroup + PitchShift/Distortion effects) for extra dread, plus a red
+screen tint and a warning banner. It runs for `Config.Round.OvertimeDuration`
+(90s) as a hard cap — after that, whoever's still standing gets swept
+regardless, so the round can never hang forever even if someone keeps
+clicking Respawn into it. Dying (even during Overtime) never force-ends the
+round on its own — Respawn/Spectate always stays live for anyone who hasn't
+resolved their choice yet; the round only ends early once everyone has
+actually escaped or given up.
 
 Adding a fourth station is: build its client module under
 `StarterPlayerScripts/Minigames/`, register it in
@@ -193,19 +218,23 @@ src/ServerScriptService/
   MinigameService.lua                Station wiring, noise pulses, exit-unlock trigger
   ExitService.lua                    Exit door lock/unlock + escape-zone detection
   PlayerService.lua                  Round state per player, catch/respawn/spectate/escape
-  GameState.lua                      Waiting → Intermission → Playing → Results loop
+  GameState.lua                      Waiting → Intermission → Playing → Results loop, Overtime trigger
 src/StarterPlayerScripts/
   Main.client.lua                    Boots all client controllers
   UIUtil.lua                         Shared UI-building helpers
+  CursorLock.lua                     Frees the mouse for clickable menus (fights the camera every frame)
   SprintController.lua               Shift-to-sprint
   AmbienceController.lua             Store ambience loop, proximity heartbeat, round/exit/escape stingers
   JumpscareController.lua            Full-screen jumpscare on catch + catch/scream audio
   DeathController.lua                Death/respawn/spectate menu + escape banner
   SpectateController.lua             Camera-follow spectating with target cycling
-  MinigameController.lua             Minigame overlay + dispatch to the 3 minigame modules + success/fail audio
-  HUDController.lua                  Round phase, station progress, results screen
+  MinigameController.lua             Minigame overlay + dispatch to the 6 minigame modules + success/fail audio
+  HUDController.lua                  Round phase, station progress, results screen, Overtime banner/tint
   Minigames/
     RestockShelves.lua
     FlatPackAssembly.lua
     SelfCheckout.lua
+    InventoryCount.lua
+    CustomerRush.lua
+    ForkliftCertification.lua
 ```

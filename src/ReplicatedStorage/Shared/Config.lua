@@ -11,12 +11,13 @@ local Config = {}
 
 Config.Maze = {
 	CellSize = 22, -- bigger rooms: more sense of scale, fewer junctions per traveled distance
-	GridWidth = 11,
-	GridHeight = 11,
+	GridWidth = 22, -- doubled side length (4x area) to spread 8 monsters across more space
+	GridHeight = 22,
 	WallHeight = 12,
 	WallThickness = 1,
 	LoopChance = 0.07, -- fewer shortcuts visible/available at any junction -- more backrooms, less web-of-shortcuts
 	MainCorridorEvery = 3, -- every Nth row/column is a wide "main aisle" Thomas can use
+	DoorwayWidth = 6, -- non-boulevard passages are this wide instead of the full room edge
 }
 
 Config.Lighting = {
@@ -41,7 +42,18 @@ Config.Round = {
 	RespawnInvulnerability = 3,
 	ResultsScreenTime = 14,
 	JumpscareDuration = 2.6,
-	MaxRoundTime = 600,
+	-- Dying is never a dead end on its own -- Respawn/Spectate stays live and
+	-- the round keeps running for anyone still Alive or deciding. This is
+	-- the "how long do you have to actually escape" clock instead.
+	MaxRoundTime = 600, -- 10 minutes
+	-- Once MaxRoundTime is up, monsters go into Overtime (see MonsterAI's
+	-- EnterOvertime): much faster, omniscient targeting of whoever's
+	-- nearest, no more sight checks. This is the hard cap after which
+	-- anyone still standing gets swept regardless -- guarantees the round
+	-- can't hang forever even if someone keeps respawning into it.
+	OvertimeDuration = 90,
+	OvertimeSpeedMultiplier = 2.4,
+	OvertimeRepathInterval = 0.15,
 }
 
 Config.Player = {
@@ -62,8 +74,17 @@ Config.Sounds = {
 	UIClick = "", -- generic button/interaction click, reused everywhere
 	MinigameSuccess = "", -- one-shot when any station is cleared
 	MinigameFail = "", -- one-shot when any station attempt is failed/given up
+	OvertimeWarning = "", -- one-shot dramatic stinger the instant Overtime begins
 	HeartbeatMaxDistance = 55, -- studs at which the heartbeat starts fading in
 	HeartbeatMinDistance = 10, -- studs at which the heartbeat hits full volume/pitch
+}
+
+-- Audio/visual escalation once Overtime kicks in (see Config.Round.MaxRoundTime).
+Config.Overtime = {
+	PitchOctave = 0.65, -- <1 = deeper; applied to every monster sound via a shared SoundGroup
+	DistortionLevel = 0.55,
+	WarningText = "THE STORE IS CLOSING. THEY WILL FIND YOU.",
+	TintColor = Color3.fromRGB(120, 0, 0),
 }
 
 -- Per-monster sound fields:
@@ -310,6 +331,33 @@ Config.Minigames = {
 		roundsToWin = 10,
 		noiseInterval = 2,
 		noiseRadius = 60,
+	},
+	{
+		id = "InventoryCount",
+		stationName = "Inventory Count",
+		description = "Memorize the shelf, then answer before you forget.",
+		duration = 20,
+		roundsToWin = 5,
+		noiseInterval = 3,
+		noiseRadius = 50,
+	},
+	{
+		id = "CustomerRush",
+		stationName = "Customer Service Rush",
+		description = "Every lit register needs you. All of them. At once.",
+		duration = 16,
+		roundsToWin = 8,
+		noiseInterval = 2.5,
+		noiseRadius = 55,
+	},
+	{
+		id = "ForkliftCertification",
+		stationName = "Forklift Certification",
+		description = "Keep it between the lines. Do not think about what's behind you.",
+		duration = 20,
+		roundsToWin = 10,
+		noiseInterval = 2.5,
+		noiseRadius = 55,
 	},
 }
 

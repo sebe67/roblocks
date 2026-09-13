@@ -9,6 +9,8 @@
 local PathfindingService = game:GetService("PathfindingService")
 local Players = game:GetService("Players")
 local CollectionService = game:GetService("CollectionService")
+local SoundService = game:GetService("SoundService")
+local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local SoundKit = require(game:GetService("ReplicatedStorage").Shared.SoundKit)
 
 local MonsterAI = {}
@@ -16,9 +18,72 @@ MonsterAI.__index = MonsterAI
 
 local registry = {}
 local catchHandler = nil
+local overtimeActive = false
 
 function MonsterAI.SetCatchHandler(fn)
 	catchHandler = fn
+end
+
+-- Every monster sound (footsteps, chase stingers, idle tells) routes
+-- through this one SoundGroup, so Overtime can make everything sound
+-- deeper/distorted at once without touching each individual Sound.
+local monsterSoundGroup
+local function getMonsterSoundGroup()
+	if monsterSoundGroup then
+		return monsterSoundGroup
+	end
+	monsterSoundGroup = Instance.new("SoundGroup")
+	monsterSoundGroup.Name = "Monsters"
+	monsterSoundGroup.Parent = SoundService
+
+	local pitch = Instance.new("PitchShiftSoundEffect")
+	pitch.Name = "OvertimePitch"
+	pitch.Octave = 1
+	pitch.Enabled = false
+	pitch.Parent = monsterSoundGroup
+
+	local distortion = Instance.new("DistortionSoundEffect")
+	distortion.Name = "OvertimeDistortion"
+	distortion.Level = 0
+	distortion.Enabled = false
+	distortion.Parent = monsterSoundGroup
+
+	return monsterSoundGroup
+end
+
+-- Flips every monster into godmode: much faster, omniscient targeting of
+-- whoever's nearest (no sight/range checks), and deeper/distorted audio.
+-- Called once by GameState when Config.Round.MaxRoundTime runs out.
+function MonsterAI.EnterOvertime()
+	overtimeActive = true
+	local group = getMonsterSoundGroup()
+	local pitch = group:FindFirstChild("OvertimePitch")
+	local distortion = group:FindFirstChild("OvertimeDistortion")
+	if pitch then
+		pitch.Octave = Config.Overtime.PitchOctave
+		pitch.Enabled = true
+	end
+	if distortion then
+		distortion.Level = Config.Overtime.DistortionLevel
+		distortion.Enabled = true
+	end
+	for _, monster in ipairs(registry) do
+		monster.god = true
+		monster.state = "Chase"
+	end
+end
+
+function MonsterAI.ExitOvertime()
+	overtimeActive = false
+	local group = getMonsterSoundGroup()
+	local pitch = group:FindFirstChild("OvertimePitch")
+	local distortion = group:FindFirstChild("OvertimeDistortion")
+	if pitch then
+		pitch.Enabled = false
+	end
+	if distortion then
+		distortion.Enabled = false
+	end
 end
 
 local function createRig(def)
@@ -100,11 +165,13 @@ function MonsterAI.new(def, maze, waypointGraph)
 	self.model, self.humanoid, self.root = createRig(def)
 	self.model.Parent = workspace
 
+	self.god = false
 	self.footstepSound = SoundKit.CreateLoop3D(self.root, def.footstepSoundId, {
 		Name = "Footsteps",
 		Volume = 0.4,
 		PlaybackSpeed = def.footstepPitch or 1,
 		MaxDistance = def.footstepMaxDistance or 60,
+		SoundGroup = getMonsterSoundGroup(),
 	})
 	self.nextIdleSoundAt = os.clock() + math.random((def.idleSoundInterval or { 8, 16 })[1], (def.idleSoundInterval or { 8, 16 })[2])
 
@@ -375,8 +442,54 @@ function MonsterAI:_updateFootstepAudio()
 	end
 end
 
+-- Overtime: no sight/range checks, just always know exactly where the
+-- nearest alive player is and beeline for them at a much higher speed.
+-- Still respects Thomas's rail restriction and still falls back to
+-- PathfindingService (much more frequently) when a wall blocks the direct
+-- line -- "godlevel pathfinding," not "walks through walls."
+function MonsterAI:_updateGodChase(now)
+	local def = self.def
+	local nearestPlayer, nearestRoot, nearestDist
+	for _, entry in ipairs(playersToCheck()) do
+		local d = (entry.root.Position - self.root.Position).Magnitude
+		if not nearestDist or d < nearestDist then
+			nearestDist = d
+			nearestPlayer = entry.player
+			nearestRoot = entry.root
+		end
+	end
+	if not nearestRoot then
+		return
+	end
+
+	self.target = nearestPlayer.Character
+	self.humanoid.WalkSpeed = def.chaseSpeed * Config.Round.OvertimeSpeedMultiplier
+	self:_updateFootstepAudio()
+
+	if def.quirk ~= "railOnly" and self:_hasClearPath(nearestRoot.Position) then
+		self.currentPath = nil
+		local moved = (not self._lastCommandedPoint)
+			or (self._lastCommandedPoint - nearestRoot.Position).Magnitude > 0.5
+		if moved then
+			self.humanoid:MoveTo(nearestRoot.Position)
+			self._lastCommandedPoint = nearestRoot.Position
+		end
+	else
+		if now - self.lastPathTime > Config.Round.OvertimeRepathInterval then
+			self.lastPathTime = now
+			self:_moveAlongPath(self:_pathTo(nearestRoot.Position) or {})
+		end
+		self:_followCurrentPath(0)
+	end
+end
+
 function MonsterAI:Update(dt)
 	if self.paused or self.destroyed then
+		return
+	end
+
+	if self.god then
+		self:_updateGodChase(os.clock())
 		return
 	end
 
@@ -390,12 +503,12 @@ function MonsterAI:Update(dt)
 			self.target = seen.player.Character
 			self.lastSightTime = now
 			self.currentPath = nil
-			SoundKit.PlayAt(self.root, def.chaseSoundId, { Volume = 0.9, MaxDistance = 80 })
+			SoundKit.PlayAt(self.root, def.chaseSoundId, { Volume = 0.9, MaxDistance = 80, SoundGroup = getMonsterSoundGroup() })
 			if def.quirk == "callout" then
 				MonsterAI.BroadcastCallout(seen.root.Position, self)
 				-- Dora's idleSoundId is reserved for this exact moment -- her
 				-- "callout" line, not a random patrol tell.
-				SoundKit.PlayAt(self.root, def.idleSoundId, { Volume = 0.8, MaxDistance = 70 })
+				SoundKit.PlayAt(self.root, def.idleSoundId, { Volume = 0.8, MaxDistance = 70, SoundGroup = getMonsterSoundGroup() })
 			end
 		end
 	end
@@ -490,7 +603,7 @@ function MonsterAI:Update(dt)
 	-- Occasional audio tell (SpongeBob's giggle, George's chatter, etc).
 	-- Dora's idleSoundId is reserved for her callout line, not this roll.
 	if def.quirk ~= "callout" and now > self.nextIdleSoundAt then
-		SoundKit.PlayAt(self.root, def.idleSoundId, { Volume = 0.6, MaxDistance = 40 })
+		SoundKit.PlayAt(self.root, def.idleSoundId, { Volume = 0.6, MaxDistance = 40, SoundGroup = getMonsterSoundGroup() })
 		local interval = def.idleSoundInterval or { 8, 16 }
 		self.nextIdleSoundAt = now + math.random(interval[1], interval[2])
 	end
@@ -510,6 +623,8 @@ function MonsterAI:SetPaused(paused)
 		if self.footstepSound then
 			self.footstepSound:Stop()
 		end
+		-- Godmode is strictly a this-round-only escalation.
+		self.god = false
 	end
 end
 

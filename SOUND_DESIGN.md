@@ -104,6 +104,12 @@ media.
 | `UIClick` | Reused on every button/interaction across the whole game | A small, neutral click/blip. Should be unobtrusive since it plays a lot. | "ui click soft", "button tap" |
 | `MinigameSuccess` | One-shot, any station cleared | Short positive chime, distinct from `ExitUnlocked` (that one should feel bigger). | "success chime short", "correct answer ding" |
 | `MinigameFail` | One-shot, any station failed/given up | Short negative buzz/thud — not too harsh, players will hear it a lot while learning the minigames. | "fail buzz short", "wrong answer buzz" |
+| `OvertimeWarning` | One-shot, the instant Overtime begins (10 min mark) | Big and alarming — a klaxon, a discordant orchestral hit, something that says "everything just got worse." This is the one sound in the whole game that's allowed to be jarring. | "alarm klaxon", "horror sting dramatic", "dissonant orchestral hit" |
+
+Overtime also automatically pitches down and distorts every *monster* sound
+(footsteps, chase stingers, jumpscares, idle tells) via a shared SoundGroup
+— tune `Config.Overtime.PitchOctave`/`DistortionLevel` to taste, no extra
+audio asset needed for that part.
 
 ## Per-monster sounds (`Config.Monsters[n]`)
 

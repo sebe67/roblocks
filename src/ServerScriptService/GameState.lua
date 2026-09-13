@@ -3,8 +3,10 @@
 -- state (all caught, escaped, or timed out).
 
 local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local Net = require(game:GetService("ReplicatedStorage").Shared.Net)
+local MonsterAI = require(script.Parent.MonsterAI)
 
 local GameState = {}
 GameState.__index = GameState
@@ -20,6 +22,7 @@ function GameState.new(maze, playerService, monsters, minigameService, exitServi
 
 	self.phaseEvent = Net.GetEvent("RoundPhase")
 	self.resultsEvent = Net.GetEvent("RoundResults")
+	self.overtimeEvent = Net.GetEvent("OvertimeStarted")
 
 	playerService.onStateChanged = function()
 		self:_checkRoundEnd()
@@ -73,6 +76,8 @@ function GameState:_playRound()
 	self.playerService.roundActive = true
 	self.minigameService:Reset()
 	self.exitService:Reset()
+	self:_resetOvertimeVisuals()
+	MonsterAI.ExitOvertime()
 	self:_setMonstersPaused(false)
 
 	for _, player in ipairs(Players:GetPlayers()) do
@@ -83,9 +88,21 @@ function GameState:_playRound()
 
 	local startTime = os.clock()
 	self._roundEnded = false
+	local overtimeStarted = false
+	local overtimeDeadline
+
 	while not self._roundEnded do
 		task.wait(1)
-		if os.clock() - startTime > Config.Round.MaxRoundTime then
+		if not overtimeStarted and os.clock() - startTime > Config.Round.MaxRoundTime then
+			overtimeStarted = true
+			overtimeDeadline = os.clock() + Config.Round.OvertimeDuration
+			self:_startOvertime()
+		end
+
+		if overtimeStarted and os.clock() > overtimeDeadline then
+			-- Hard cap: whoever's still standing (or still respawning into
+			-- it) gets swept regardless, so the round can never hang
+			-- forever even if someone keeps clicking Respawn into godmode.
 			for _, player in ipairs(Players:GetPlayers()) do
 				self.playerService:ForceTimeout(player)
 			end
@@ -97,6 +114,18 @@ function GameState:_playRound()
 
 	self.playerService.roundActive = false
 	self:_setMonstersPaused(true)
+end
+
+function GameState:_startOvertime()
+	MonsterAI.EnterOvertime()
+	self.overtimeEvent:FireAllClients()
+	Lighting.FogEnd = math.max(30, Lighting.FogEnd * 0.6)
+	Lighting.Brightness = math.max(0.4, Lighting.Brightness * 0.7)
+end
+
+function GameState:_resetOvertimeVisuals()
+	Lighting.FogEnd = Config.Lighting.FogEnd
+	Lighting.Brightness = Config.Lighting.Brightness
 end
 
 function GameState:_checkRoundEnd()
