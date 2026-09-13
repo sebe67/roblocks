@@ -75,7 +75,18 @@ function DeathController.Init(context)
 	respawnBtn.MouseButton1Click:Connect(function()
 		SoundKit.PlayUI(Config.Sounds.UIClick, { Volume = 0.5 })
 		respawnEvent:FireServer()
-		closeMenu()
+		gui.Enabled = false
+		-- Deliberately don't CursorLock.Pop here: that would flip the camera
+		-- back to locked-first-person immediately, before the server has
+		-- actually finished respawning the character over the network,
+		-- which is what caused "can't move right after clicking Respawn."
+		-- Wait for the server's RoundSpawn confirmation instead. Safety net
+		-- in case that never arrives (e.g. the round already ended).
+		task.delay(3, function()
+			if menuOpen then
+				closeMenu()
+			end
+		end)
 	end)
 	spectateBtn.MouseButton1Click:Connect(function()
 		SoundKit.PlayUI(Config.Sounds.UIClick, { Volume = 0.5 })

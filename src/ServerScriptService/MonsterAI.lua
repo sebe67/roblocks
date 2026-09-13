@@ -187,6 +187,26 @@ function MonsterAI:_canSee(targetRoot)
 	return true
 end
 
+-- A cheap, unobstructed-line-of-travel check (as opposed to _canSee, which
+-- also checks FOV/range for spotting). Used so chasing can just walk
+-- straight at a player when nothing's in the way, only falling back to
+-- PathfindingService when a wall is actually blocking the direct route.
+function MonsterAI:_hasClearPath(targetPos)
+	local origin = self.root.Position
+	local direction = targetPos - origin
+	if direction.Magnitude < 1 then
+		return true
+	end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { self.model }
+	local result = workspace:Raycast(origin, direction, params)
+	if not result then
+		return true
+	end
+	return (result.Position - targetPos).Magnitude < 2
+end
+
 function MonsterAI:_inDarkCell()
 	local cellSize = self.maze.cellSize
 	local x = math.floor(self.root.Position.X / cellSize) + 1
@@ -397,24 +417,40 @@ function MonsterAI:Update(dt)
 				self.currentPath = nil
 			end
 
-			if now - self.lastPathTime > def.repathInterval then
-				self.lastPathTime = now
-				local pathExhausted = not self.currentPath or not self.currentPath[self.pathIndex]
-				local targetMoved = (not self.lastChaseTargetPos)
-					or (root.Position - self.lastChaseTargetPos).Magnitude > 8
-				-- Recomputing a brand new PathfindingService route every
-				-- single interval -- even when the target has barely moved
-				-- -- lets it flip-flop between two similarly-good routes
-				-- through the maze's loops/shortcuts, which reads as
-				-- indecisive/erratic. Only replace the route when it's
-				-- actually stale.
-				if pathExhausted or targetMoved then
-					self.lastChaseTargetPos = root.Position
-					self:_moveAlongPath(self:_pathTo(root.Position) or {})
-				end
-			end
 			self.humanoid.WalkSpeed = self:_applyQuirkSpeed(def.chaseSpeed)
-			self:_followCurrentPath(dt)
+
+			-- Straight line available (and not rail-restricted): just walk
+			-- directly at the player's live position. No waypoints, no
+			-- PathfindingService, nothing to flip-flop between -- this is
+			-- deliberately the simple case. Only fall back to pathfinding
+			-- when a wall is actually blocking that direct route.
+			if def.quirk ~= "railOnly" and self:_hasClearPath(root.Position) then
+				self.currentPath = nil
+				local moved = (not self._lastCommandedPoint)
+					or (self._lastCommandedPoint - root.Position).Magnitude > 0.5
+				if moved then
+					self.humanoid:MoveTo(root.Position)
+					self._lastCommandedPoint = root.Position
+				end
+			else
+				if now - self.lastPathTime > def.repathInterval then
+					self.lastPathTime = now
+					local pathExhausted = not self.currentPath or not self.currentPath[self.pathIndex]
+					local targetMoved = (not self.lastChaseTargetPos)
+						or (root.Position - self.lastChaseTargetPos).Magnitude > 8
+					-- Recomputing a brand new PathfindingService route every
+					-- single interval -- even when the target has barely
+					-- moved -- lets it flip-flop between two similarly-good
+					-- routes through the maze's loops/shortcuts, which reads
+					-- as indecisive/erratic. Only replace the route when
+					-- it's actually stale.
+					if pathExhausted or targetMoved then
+						self.lastChaseTargetPos = root.Position
+						self:_moveAlongPath(self:_pathTo(root.Position) or {})
+					end
+				end
+				self:_followCurrentPath(dt)
+			end
 			return
 		end
 	end

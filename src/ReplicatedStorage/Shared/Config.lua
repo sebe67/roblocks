@@ -10,12 +10,12 @@
 local Config = {}
 
 Config.Maze = {
-	CellSize = 14,
-	GridWidth = 13,
-	GridHeight = 13,
+	CellSize = 22, -- bigger rooms: more sense of scale, fewer junctions per traveled distance
+	GridWidth = 11,
+	GridHeight = 11,
 	WallHeight = 12,
 	WallThickness = 1,
-	LoopChance = 0.14, -- chance an extra wall is knocked down after generation, adding shortcuts
+	LoopChance = 0.07, -- fewer shortcuts visible/available at any junction -- more backrooms, less web-of-shortcuts
 	MainCorridorEvery = 3, -- every Nth row/column is a wide "main aisle" Thomas can use
 }
 
@@ -25,10 +25,10 @@ Config.Lighting = {
 	OutdoorAmbient = Color3.fromRGB(30, 30, 38),
 	ColorShift_Bottom = Color3.fromRGB(20, 20, 30),
 	FogColor = Color3.fromRGB(18, 18, 24),
-	FogStart = 24,
-	FogEnd = 150,
+	FogStart = 12, -- shorter visibility distance -- you shouldn't see the next 2-3 junctions from here
+	FogEnd = 65,
 	ExposureCompensation = -0.2,
-	FixtureRange = 22,
+	FixtureRange = 28, -- bumped up to match the bigger rooms so lit cells still feel adequately lit
 	FixtureBrightness = 2.2,
 	FixtureColor = Color3.fromRGB(255, 238, 200),
 	FixtureFrequency = 3, -- roughly 1 in N cells gets a working ceiling fixture; rest stay dim
