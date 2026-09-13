@@ -95,6 +95,12 @@ function AmbienceController.Init(context)
 	Net.GetEvent("PlayerEscaped").OnClientEvent:Connect(function()
 		SoundKit.PlayUI(sounds.EscapeSuccess, { Volume = 0.9 })
 	end)
+
+	Net.GetEvent("BlackoutEvent").OnClientEvent:Connect(function(starting)
+		if starting then
+			SoundKit.PlayUI(sounds.BlackoutSting, { Volume = 0.9 })
+		end
+	end)
 end
 
 return AmbienceController

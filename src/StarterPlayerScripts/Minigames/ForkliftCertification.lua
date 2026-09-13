@@ -6,6 +6,7 @@
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local UIUtil = require(script.Parent.Parent.UIUtil)
+local RetroTheme = require(script.Parent.RetroTheme)
 
 local ZONE_HALF_HEIGHT = 0.11
 local MOVE_SPEED = 0.7
@@ -19,7 +20,7 @@ function ForkliftCertification.Play(container, config, onComplete)
 	local deadline = os.clock() + config.duration
 	local ticks = 0
 
-	local statusLabel = UIUtil.label({
+	local statusLabel = RetroTheme.label({
 		Size = UDim2.new(1, 0, 0.14, 0),
 		TextScaled = true,
 		TextStrokeTransparency = 0,
@@ -27,11 +28,11 @@ function ForkliftCertification.Play(container, config, onComplete)
 	})
 	statusLabel.Parent = container
 
-	local progressLabel = UIUtil.label({
+	local progressLabel = RetroTheme.label({
 		Size = UDim2.new(1, 0, 0.1, 0),
 		Position = UDim2.new(0, 0, 0.14, 0),
 		TextScaled = true,
-		TextColor3 = Color3.fromRGB(200, 200, 200),
+		TextColor3 = RetroTheme.Colors.Dim,
 		Text = "",
 	})
 	progressLabel.Parent = container
@@ -42,6 +43,7 @@ function ForkliftCertification.Play(container, config, onComplete)
 		BackgroundColor3 = Color3.fromRGB(50, 50, 55),
 	})
 	track.Parent = container
+	RetroTheme.outline(track, Color3.new(0, 0, 0), 2)
 
 	local targetZone = UIUtil.frame({
 		Size = UDim2.new(1, 0, ZONE_HALF_HEIGHT * 2, 0),
@@ -58,7 +60,7 @@ function ForkliftCertification.Play(container, config, onComplete)
 	})
 	marker.Parent = track
 
-	local upBtn = UIUtil.button({
+	local upBtn = RetroTheme.button({
 		Size = UDim2.new(0.14, 0, 0.1, 0),
 		Position = UDim2.new(0.62, 0, 0.32, 0),
 		Text = "UP",
@@ -66,7 +68,7 @@ function ForkliftCertification.Play(container, config, onComplete)
 		BackgroundColor3 = Color3.fromRGB(0, 81, 186),
 	})
 	upBtn.Parent = container
-	local downBtn = UIUtil.button({
+	local downBtn = RetroTheme.button({
 		Size = UDim2.new(0.14, 0, 0.1, 0),
 		Position = UDim2.new(0.62, 0, 0.46, 0),
 		Text = "DOWN",

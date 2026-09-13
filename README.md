@@ -111,6 +111,19 @@ in Workspace. A totally blank new place works fine.
   minutes so nobody's stuck in a stalemate.
 - **A Gen Z/Alpha-flavored results screen** ("CAUGHT — L + ratio", "ESCAPED
   — unbeatable NPC energy", etc.) via `HUDController.lua`.
+- **Random blackouts** (`StoreTheme.lua`): during an active round, every
+  working light in the store can go out for `Config.Blackout.Duration`
+  (10s) at once. It's checked every `Config.Blackout.CheckInterval` (5s)
+  with odds of `CheckInterval / Config.Blackout.AverageInterval` each time —
+  a Poisson-style process, so it averages one blackout every
+  `Config.Blackout.AverageInterval` (2 minutes) with no fixed guarantee
+  either way, per your call. Fires a `BlackoutEvent` to clients for a
+  banner/screen-dip/sting, and is fully suspended outside of an active
+  Playing round (and force-ends immediately if the round ends mid-blackout).
+  SpongeBob's quirk above uses the same underlying suppression system
+  (`StoreTheme.SuppressFixture`/`ReleaseFixture`, reference-counted so the
+  two never fight over a fixture they're both currently holding off) — try
+  a blackout on demand with `/blackout` in chat.
 
 ## The monster roster
 
@@ -122,7 +135,7 @@ in Workspace. A totally blank new place works fine.
 | Barney | slow, huge | loud footsteps (bigger hearing radius) — telegraphed |
 | The Grinch | fast | faster and sees further in cells whose ceiling fixture is actually dead |
 | Kung Fu Panda | medium | occasional straight-line dash burst |
-| SpongeBob | medium | giggles while patrolling — a red herring cue |
+| SpongeBob | medium | **kills every working light near him as he moves** (they come back ~15s after he leaves, see below) |
 | Dora | medium | **spotting you alerts every other monster to your last position** |
 
 Thomas's restriction isn't a special-cased graph anymore — it falls out
@@ -140,6 +153,33 @@ would all fit the same "wholesome mascot gone wrong" tone if you want to
 keep expanding past 8. Adding one is just a new entry in `Config.Monsters`
 — no other code changes needed.
 
+## The story: why the tasks exist
+
+Somewhere between the meatballs and the mattress showroom, this IKEA
+started running itself. The staff didn't quit — the store's automated
+backend, a loyalty-and-inventory system nobody remembers approving
+(internally: the **Customer Retention System**, or **CRS**), quietly
+absorbed their shifts, their badges, and eventually their shapes. What
+patrols the aisles now are CRS's "Greeters" — mascot-shaped constructs
+stitched together from whatever cheerful licensed characters were still
+looping on the in-store TVs the night the changeover happened. They don't
+want to hurt you. They want you to finish your visit.
+
+CRS still runs the store like a store: nothing leaves the building — least
+of all a customer — until the day's **Loyalty Quota** is met. That Quota is
+just the same operational checklist a real IKEA runs every day, minus the
+humans who used to run it: shelves restocked, self-checkouts logged,
+inventory audited, registers covered, forklifts certified. It doesn't care
+that you didn't apply for the job. Complete every task, and CRS will
+consider the loading dock's automatic lockdown "no longer necessary" — its
+words, stenciled right onto the door. Leave one undone, and as far as CRS is
+concerned, you haven't finished shopping yet.
+
+This is why the HUD tracks stations as a **"Loyalty Quota"**, why each
+station's overlay opens with a CRS directive explaining what it thinks it's
+asking of you (`Config.Minigames[i].lore`), and why the loading dock is
+labeled "LOADING DOCK [LOCKED]" instead of just "EXIT."
+
 ## The win condition (per your call)
 
 Six stations — **Restock: Aisle of Regret** (color-matching), **Flat-Pack
@@ -156,9 +196,17 @@ door (`ExitDoor`) tweens open; touch the zone just past it to escape and
 win.
 
 Adding a 7th is: a new client module under `Minigames/`, a line in
-`MinigameController.lua`'s `GAMES` table, and a `Config.Minigames` entry —
-station placement (`MazeGenerator.lua`) automatically spreads however many
-entries exist across the grid, no placement code to touch.
+`MinigameController.lua`'s `GAMES` table, and a `Config.Minigames` entry
+(including a `lore` line so CRS has something to say about it) — station
+placement (`MazeGenerator.lua`) automatically spreads however many entries
+exist across the grid, no placement code to touch.
+
+**Visual style**: the minigame overlay is deliberately reskinned distinct
+from the rest of the game's UI — an 8-bit look (`Enum.Font.PressStart2P`,
+flat high-contrast colors, square borders instead of rounded corners) via
+`StarterPlayerScripts/Minigames/RetroTheme.lua`, shared by all 6 games and
+the overlay shell itself, and a noticeably bigger overlay window than
+before. The mechanics of each game are unchanged — only how they're drawn.
 
 ## Overtime
 
@@ -275,6 +323,7 @@ src/StarterPlayerScripts/
   MinigameController.lua             Minigame overlay + dispatch to the 6 minigame modules + success/fail audio/toast
   HUDController.lua                  Round phase, station progress, results screen, Overtime banner/tint
   Minigames/
+    RetroTheme.lua                    Shared 8-bit look (pixel font, palette, square borders) for every station's UI
     RestockShelves.lua
     FlatPackAssembly.lua
     SelfCheckout.lua

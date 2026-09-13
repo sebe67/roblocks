@@ -8,6 +8,7 @@ local TweenService = game:GetService("TweenService")
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local SoundKit = require(game:GetService("ReplicatedStorage").Shared.SoundKit)
 local UIUtil = require(script.Parent.Parent.UIUtil)
+local RetroTheme = require(script.Parent.RetroTheme)
 
 local PANEL_COLORS = {
 	Color3.fromRGB(210, 50, 50),
@@ -26,7 +27,7 @@ function FlatPackAssembly.Play(container, config, onComplete)
 	local accepting = false
 	local roundsCompleted = 0
 
-	local statusLabel = UIUtil.label({
+	local statusLabel = RetroTheme.label({
 		Size = UDim2.new(1, 0, 0.18, 0),
 		TextScaled = true,
 		TextStrokeTransparency = 0,
@@ -34,11 +35,11 @@ function FlatPackAssembly.Play(container, config, onComplete)
 	})
 	statusLabel.Parent = container
 
-	local progressLabel = UIUtil.label({
+	local progressLabel = RetroTheme.label({
 		Size = UDim2.new(1, 0, 0.1, 0),
 		Position = UDim2.new(0, 0, 0.18, 0),
 		TextScaled = true,
-		TextColor3 = Color3.fromRGB(200, 200, 200),
+		TextColor3 = RetroTheme.Colors.Dim,
 		Text = "",
 	})
 	progressLabel.Parent = container
@@ -65,7 +66,7 @@ function FlatPackAssembly.Play(container, config, onComplete)
 	-- watch/replay color animation, so the player always sees their click
 	-- registered even before the correct/wrong outcome resolves.
 	local function flashClick(btn)
-		local stroke = btn:FindFirstChildOfClass("UIStroke")
+		local stroke = btn:FindFirstChild("ClickFlash")
 		local scale = btn:FindFirstChildOfClass("UIScale")
 		if stroke then
 			stroke.Transparency = 0
@@ -83,7 +84,12 @@ function FlatPackAssembly.Play(container, config, onComplete)
 		btn.Parent = panelHolder
 		panels[i] = btn
 
+		-- Permanent thin black pixel-art outline (retro look), separate from
+		-- the white click-flash ring below it.
+		RetroTheme.outline(btn, Color3.new(0, 0, 0), 2)
+
 		local stroke = Instance.new("UIStroke")
+		stroke.Name = "ClickFlash"
 		stroke.Thickness = 5
 		stroke.Color = Color3.new(1, 1, 1)
 		stroke.Transparency = 1

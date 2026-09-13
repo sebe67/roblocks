@@ -212,6 +212,16 @@ function MazeGenerator.Generate()
 
 	local cells, edgeStyle = generateGrid(W, H)
 
+	-- Every wall/doorway-stub part is grown by this much (split evenly
+	-- across whichever ends the trim math computed) beyond its "exact"
+	-- computed size, so touching parts overlap by a hair instead of
+	-- meeting at an exact shared face. Two parts that are geometrically
+	-- exact but merely touching can still render a hairline seam (subject
+	-- to float precision and lighting), which read as the same kind of
+	-- "gap" as an actual logic hole; a small guaranteed overlap costs
+	-- nothing visible at this scale and closes both at once.
+	local SEAM_OVERLAP = 0.08
+
 	local storeModel = Instance.new("Model")
 	storeModel.Name = "Store"
 
@@ -304,6 +314,14 @@ function MazeGenerator.Generate()
 			fixture.Color = isWorking and Config.Lighting.FixtureColor or Color3.fromRGB(60, 60, 60)
 			fixture.Parent = folders.Fixtures
 
+			-- "NaturallyOn" is the fixture's permanent, generation-time
+			-- assignment -- whether it's one of the lit ones at all.
+			-- "Working" is the dynamic, currently-lit state everything else
+			-- reads (MonsterAI:_inDarkCell, the Grinch's darkBoost quirk):
+			-- StoreTheme can suppress a naturally-on fixture (a blackout,
+			-- SpongeBob's lightsOut quirk) without losing track of what it
+			-- should return to once released.
+			fixture:SetAttribute("NaturallyOn", isWorking)
 			if isWorking then
 				local light = Instance.new("PointLight")
 				light.Range = Config.Lighting.FixtureRange
@@ -422,16 +440,16 @@ function MazeGenerator.Generate()
 				or 0
 			local eastTrim = (hasWallMaterial(x, y, "E") or hasWallMaterial(x, neighborY, "E")) and (wallThickness / 2)
 				or 0
-			local length = cellSize - westTrim - eastTrim
+			local length = cellSize - westTrim - eastTrim + SEAM_OVERLAP
 			local xOffset = (eastTrim - westTrim) / 2
 			local z = (dir == "N") and (-cellSize / 2) or (cellSize / 2)
-			size = Vector3.new(length, wallHeight, wallThickness)
+			size = Vector3.new(length, wallHeight + SEAM_OVERLAP, wallThickness)
 			cf = CFrame.new(center + Vector3.new(xOffset, wallHeight / 2, z))
 		elseif dir == "E" then
-			size = Vector3.new(wallThickness, wallHeight, cellSize)
+			size = Vector3.new(wallThickness, wallHeight + SEAM_OVERLAP, cellSize + SEAM_OVERLAP)
 			cf = CFrame.new(center + Vector3.new(cellSize / 2, wallHeight / 2, 0))
 		else -- W
-			size = Vector3.new(wallThickness, wallHeight, cellSize)
+			size = Vector3.new(wallThickness, wallHeight + SEAM_OVERLAP, cellSize + SEAM_OVERLAP)
 			cf = CFrame.new(center + Vector3.new(-cellSize / 2, wallHeight / 2, 0))
 		end
 
@@ -457,7 +475,7 @@ function MazeGenerator.Generate()
 			local stub = Instance.new("Part")
 			stub.Name = string.format("Doorway_%d_%d_%s", x, y, dir)
 			stub.Anchored = true
-			stub.Size = Vector3.new(sizeX, wallHeight, sizeZ)
+			stub.Size = Vector3.new(sizeX, wallHeight + SEAM_OVERLAP, sizeZ)
 			stub.CFrame = CFrame.new(center + Vector3.new(offsetX, wallHeight / 2, offsetZ))
 			stub.Material = math.random() < 0.3 and Enum.Material.Wood or Enum.Material.SmoothPlastic
 			stub.Color = pickWallColor(x, y)
@@ -474,8 +492,8 @@ function MazeGenerator.Generate()
 			end
 			local edgeOffset = doorwayWidth / 2 + stubLength / 2
 			local xOff = (dir == "E") and (cellSize / 2) or (-cellSize / 2)
-			makeStub(xOff, -edgeOffset, wallThickness, stubLength)
-			makeStub(xOff, edgeOffset, wallThickness, stubLength)
+			makeStub(xOff, -edgeOffset, wallThickness, stubLength + SEAM_OVERLAP)
+			makeStub(xOff, edgeOffset, wallThickness, stubLength + SEAM_OVERLAP)
 			return
 		end
 
@@ -496,10 +514,10 @@ function MazeGenerator.Generate()
 		local eastStubLength = cellSize / 2 - doorwayWidth / 2 - eastTrim
 
 		if westStubLength > 0.5 then
-			makeStub(-(doorwayWidth / 2 + westStubLength / 2), z, westStubLength, wallThickness)
+			makeStub(-(doorwayWidth / 2 + westStubLength / 2), z, westStubLength + SEAM_OVERLAP, wallThickness)
 		end
 		if eastStubLength > 0.5 then
-			makeStub(doorwayWidth / 2 + eastStubLength / 2, z, eastStubLength, wallThickness)
+			makeStub(doorwayWidth / 2 + eastStubLength / 2, z, eastStubLength + SEAM_OVERLAP, wallThickness)
 		end
 	end
 

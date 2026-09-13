@@ -12,6 +12,7 @@ local CollectionService = game:GetService("CollectionService")
 local SoundService = game:GetService("SoundService")
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local SoundKit = require(game:GetService("ReplicatedStorage").Shared.SoundKit)
+local StoreTheme = require(script.Parent.StoreTheme)
 
 local MonsterAI = {}
 MonsterAI.__index = MonsterAI
@@ -164,6 +165,27 @@ function MonsterAI.new(def, maze)
 	self.model, self.humanoid, self.root = createRig(def)
 	self.model.Parent = workspace
 
+	-- Floors/Ceiling should never occlude a sight or movement-clearance
+	-- check -- monsters and players both stand on the floor and walk under
+	-- the ceiling, so those are never real obstacles between them.
+	-- _hasClearPath's spherecast in particular has real vertical extent
+	-- (its radius), and at a monster's actual root height that sphere can
+	-- dip low enough to clip the floor even on a perfectly horizontal cast
+	-- straight at a stationary player standing in an otherwise empty room --
+	-- reading as "blocked" and forcing an unnecessary PathfindingService
+	-- detour instead of a direct sprint. Excluding both folders up front
+	-- (rather than trying to tune the radius) removes that false positive
+	-- entirely regardless of height/radius.
+	self.raycastExclude = { self.model }
+	local floorsFolder = maze.model:FindFirstChild("Floors")
+	local ceilingFolder = maze.model:FindFirstChild("Ceiling")
+	if floorsFolder then
+		table.insert(self.raycastExclude, floorsFolder)
+	end
+	if ceilingFolder then
+		table.insert(self.raycastExclude, ceilingFolder)
+	end
+
 	self.god = false
 	self.footstepSound = SoundKit.CreateLoop3D(self.root, def.footstepSoundId, {
 		Name = "Footsteps",
@@ -245,7 +267,7 @@ function MonsterAI:_canSee(targetRoot)
 
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { self.model }
+	params.FilterDescendantsInstances = self.raycastExclude
 	local result = workspace:Raycast(myPos, toTarget, params)
 	if result and not result.Instance:IsDescendantOf(targetRoot.Parent) then
 		return false
@@ -276,7 +298,7 @@ function MonsterAI:_hasClearPath(targetPos)
 	end
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { self.model }
+	params.FilterDescendantsInstances = self.raycastExclude
 	local radius = self.def.pathAgentRadius or 2
 	local result = workspace:Spherecast(origin, radius, direction, params)
 	if not result then
@@ -295,6 +317,69 @@ function MonsterAI:_inDarkCell()
 	local fixturesFolder = self.maze.model:FindFirstChild("Fixtures")
 	local fixture = fixturesFolder and fixturesFolder:FindFirstChild(string.format("Fixture_%d_%d", x, y))
 	return not (fixture and fixture:GetAttribute("Working"))
+end
+
+-- SpongeBob's "lightsOut" quirk: suppress every naturally-lit fixture
+-- within Config.LightsOutRadius studs of him, and release each one
+-- Config.LightsOutGrace seconds after he's no longer near it (canceled if
+-- he comes back within range before that timer fires). Scans only the 3x3
+-- block of grid cells around his current cell rather than every fixture in
+-- the store, and throttled to a few times a second -- plenty for something
+-- that only needs to track "am I near this room's light," not per-frame.
+function MonsterAI:_updateLightsOut(now)
+	if now < (self.nextLightsOutCheck or 0) then
+		return
+	end
+	self.nextLightsOutCheck = now + 0.25
+
+	local maze = self.maze
+	local fixturesFolder = maze.model:FindFirstChild("Fixtures")
+	if not fixturesFolder then
+		return
+	end
+	local cellSize = maze.cellSize
+	local cx = math.clamp(math.floor(self.root.Position.X / cellSize) + 1, 1, maze.gridWidth)
+	local cy = math.clamp(math.floor(self.root.Position.Z / cellSize) + 1, 1, maze.gridHeight)
+	local radius = Config.LightsOutRadius
+
+	self.litFixtures = self.litFixtures or {}
+	self.pendingRelease = self.pendingRelease or {}
+	local stillNear = {}
+
+	for dx = -1, 1 do
+		for dy = -1, 1 do
+			local fx, fy = cx + dx, cy + dy
+			if fx >= 1 and fx <= maze.gridWidth and fy >= 1 and fy <= maze.gridHeight then
+				local fixture = fixturesFolder:FindFirstChild(string.format("Fixture_%d_%d", fx, fy))
+				if fixture and fixture:GetAttribute("NaturallyOn") then
+					if (fixture.Position - self.root.Position).Magnitude <= radius then
+						stillNear[fixture] = true
+						if not self.litFixtures[fixture] then
+							self.litFixtures[fixture] = true
+							StoreTheme.SuppressFixture(fixture)
+						end
+						-- Bump the token so any release scheduled from a
+						-- previous departure sees a mismatch and no-ops --
+						-- coming back within range cancels the countdown.
+						self.pendingRelease[fixture] = (self.pendingRelease[fixture] or 0) + 1
+					end
+				end
+			end
+		end
+	end
+
+	for fixture in pairs(self.litFixtures) do
+		if not stillNear[fixture] then
+			self.litFixtures[fixture] = nil
+			local token = (self.pendingRelease[fixture] or 0) + 1
+			self.pendingRelease[fixture] = token
+			task.delay(Config.LightsOutGrace, function()
+				if not self.destroyed and self.pendingRelease[fixture] == token then
+					StoreTheme.ReleaseFixture(fixture)
+				end
+			end)
+		end
+	end
 end
 
 function MonsterAI:_scanForTargets()
@@ -497,13 +582,17 @@ function MonsterAI:Update(dt)
 		return
 	end
 
+	local now = os.clock()
+	if self.def.quirk == "lightsOut" then
+		self:_updateLightsOut(now)
+	end
+
 	if self.god then
-		self:_updateGodChase(os.clock())
+		self:_updateGodChase(now)
 		return
 	end
 
 	local def = self.def
-	local now = os.clock()
 
 	if self.state ~= "Chase" then
 		local seen = self:_scanForTargets()
@@ -643,6 +732,16 @@ function MonsterAI:SetPaused(paused)
 		end
 		-- Godmode is strictly a this-round-only escalation.
 		self.god = false
+		-- Don't leave lights suppressed forever across a round reset --
+		-- release everything this monster's lightsOut quirk currently has
+		-- off rather than waiting out their individual grace timers.
+		if self.litFixtures then
+			for fixture in pairs(self.litFixtures) do
+				StoreTheme.ReleaseFixture(fixture)
+			end
+			self.litFixtures = {}
+			self.pendingRelease = {}
+		end
 	end
 end
 

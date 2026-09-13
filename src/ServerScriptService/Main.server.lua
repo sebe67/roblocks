@@ -16,6 +16,7 @@ local GameState = require(script.Parent.GameState)
 local maze = MazeGenerator.Generate()
 StoreTheme.Apply()
 StoreTheme.StartFlicker(maze.model)
+StoreTheme.StartBlackoutLoop(maze)
 
 local monsters = MonsterSpawner.SpawnAll(maze)
 for _, monster in ipairs(monsters) do
@@ -54,6 +55,16 @@ local function onChatted(player, message)
 		local x, y = tonumber(xStr), tonumber(yStr)
 		local ok = StoreTheme.SetFixtureWorking(maze, x, y, state == "on")
 		print(string.format("[Debug] %s set light (%d,%d) %s -- %s", player.Name, x, y, state, ok and "OK" or "no such fixture"))
+		return
+	end
+
+	-- /blackout -- fires a store-wide blackout immediately instead of
+	-- waiting on the random average-every-2-minutes roll, to test it.
+	if lower:match("^/blackout%s*$") then
+		task.spawn(function()
+			StoreTheme.TriggerBlackout(maze)
+		end)
+		print(string.format("[Debug] %s triggered /blackout.", player.Name))
 	end
 end
 

@@ -36,7 +36,7 @@ function HUDController.Init(context)
 		TextScaled = true,
 		TextStrokeTransparency = 0,
 		TextXAlignment = Enum.TextXAlignment.Left,
-		Text = "Stations cleared: 0 / 0",
+		Text = "Loyalty Quota: 0 / 0",
 	})
 	progressLabel.Parent = gui
 
@@ -63,6 +63,17 @@ function HUDController.Init(context)
 		overtimeTint.Saturation = 0
 		overtimeTint.Parent = Lighting
 	end
+	-- A separate dip from OvertimeTint (so the two stack cleanly if a
+	-- blackout ever lands during Overtime) that darkens the screen for the
+	-- duration of a blackout.
+	local blackoutTint = Lighting:FindFirstChild("BlackoutTint")
+	if not blackoutTint then
+		blackoutTint = Instance.new("ColorCorrectionEffect")
+		blackoutTint.Name = "BlackoutTint"
+		blackoutTint.Brightness = 0
+		blackoutTint.Parent = Lighting
+	end
+
 	local overtimeActive = false
 
 	local function setOvertimeTint(active)
@@ -80,7 +91,7 @@ function HUDController.Init(context)
 		elseif phase == "Playing" then
 			phaseLabel.Text = ""
 			phaseLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-			progressLabel.Text = "Stations cleared: 0 / 0"
+			progressLabel.Text = "Loyalty Quota: 0 / 0"
 			overtimeActive = false
 			setOvertimeTint(false)
 		elseif phase == "Results" then
@@ -106,7 +117,7 @@ function HUDController.Init(context)
 	end)
 
 	Net.GetEvent("MinigameProgress").OnClientEvent:Connect(function(completed, total, stationName)
-		progressLabel.Text = string.format("Stations cleared: %d / %d", completed, total)
+		progressLabel.Text = string.format("Loyalty Quota: %d / %d", completed, total)
 		banner.TextColor3 = Color3.fromRGB(255, 218, 26)
 		banner.Text = stationName .. " CLEARED"
 		banner.Visible = true
@@ -122,6 +133,24 @@ function HUDController.Init(context)
 		task.delay(6, function()
 			banner.Visible = false
 		end)
+	end)
+
+	local blackoutBannerActive = false
+	Net.GetEvent("BlackoutEvent").OnClientEvent:Connect(function(starting)
+		TweenService:Create(blackoutTint, TweenInfo.new(0.15), { Brightness = starting and -0.35 or 0 }):Play()
+		if starting then
+			blackoutBannerActive = true
+			banner.TextColor3 = Color3.fromRGB(200, 200, 210)
+			banner.Text = "THE LIGHTS JUST WENT OUT."
+			banner.Visible = true
+			task.delay(4, function()
+				if blackoutBannerActive then
+					banner.Visible = false
+				end
+			end)
+		else
+			blackoutBannerActive = false
+		end
 	end)
 
 	local resultsGui = UIUtil.screenGui("ResultsGui")

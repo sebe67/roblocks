@@ -3,6 +3,7 @@ local Net = require(game:GetService("ReplicatedStorage").Shared.Net)
 local SoundKit = require(game:GetService("ReplicatedStorage").Shared.SoundKit)
 local UIUtil = require(script.Parent.UIUtil)
 local CursorLock = require(script.Parent.CursorLock)
+local RetroTheme = require(script.Parent.Minigames.RetroTheme)
 
 local RestockShelves = require(script.Parent.Minigames.RestockShelves)
 local FlatPackAssembly = require(script.Parent.Minigames.FlatPackAssembly)
@@ -28,38 +29,48 @@ function MinigameController.Init(context)
 	gui.DisplayOrder = 20
 	gui.Parent = context.playerGui
 
-	local container = UIUtil.frame({
-		Size = UDim2.new(0.5, 0, 0.55, 0),
-		Position = UDim2.new(0.25, 0, 0.2, 0),
-		BackgroundColor3 = Color3.fromRGB(25, 25, 30),
-		BackgroundTransparency = 0.05,
+	-- Bigger and visibly different from the rest of the game's UI (8-bit
+	-- pixel font, square panel, thick yellow border) so stepping into a CRS
+	-- Loyalty Task feels like its own distinct "mode."
+	local container = RetroTheme.panel({
+		Size = UDim2.new(0.72, 0, 0.78, 0),
+		Position = UDim2.new(0.14, 0, 0.09, 0),
+		BackgroundColor3 = RetroTheme.Colors.Background,
 	})
 	container.Parent = gui
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 12)
-	corner.Parent = container
 
-	local titleLabel = UIUtil.label({
-		Size = UDim2.new(0.94, 0, 0.12, 0),
-		Position = UDim2.new(0.03, 0, 0, 0),
+	local titleLabel = RetroTheme.label({
+		Size = UDim2.new(0.94, 0, 0.08, 0),
+		Position = UDim2.new(0.03, 0, 0.015, 0),
 		TextScaled = true,
 		TextStrokeTransparency = 0,
+		TextColor3 = RetroTheme.Colors.Border,
 		Text = "",
 	})
 	titleLabel.Parent = container
 
-	local giveUpBtn = UIUtil.button({
-		Size = UDim2.new(0.25, 0, 0.08, 0),
-		Position = UDim2.new(0.375, 0, 0.9, 0),
+	local subtitleLabel = RetroTheme.label({
+		Size = UDim2.new(0.94, 0, 0.09, 0),
+		Position = UDim2.new(0.03, 0, 0.095, 0),
+		TextScaled = true,
+		TextWrapped = true,
+		TextColor3 = RetroTheme.Colors.Dim,
+		Text = "",
+	})
+	subtitleLabel.Parent = container
+
+	local giveUpBtn = RetroTheme.button({
+		Size = UDim2.new(0.25, 0, 0.07, 0),
+		Position = UDim2.new(0.375, 0, 0.91, 0),
 		BackgroundColor3 = Color3.fromRGB(170, 60, 60),
 		TextScaled = true,
-		Text = "Give Up",
+		Text = "GIVE UP",
 	})
 	giveUpBtn.Parent = container
 
 	local playArea = UIUtil.frame({
-		Size = UDim2.new(0.94, 0, 0.72, 0),
-		Position = UDim2.new(0.03, 0, 0.15, 0),
+		Size = UDim2.new(0.94, 0, 0.7, 0),
+		Position = UDim2.new(0.03, 0, 0.2, 0),
 		BackgroundTransparency = 1,
 	})
 	playArea.Parent = container
@@ -70,18 +81,16 @@ function MinigameController.Init(context)
 	toastGui.DisplayOrder = 21
 	toastGui.Parent = context.playerGui
 
-	local toastLabel = UIUtil.label({
+	local toastLabel = RetroTheme.label({
 		Size = UDim2.new(0.5, 0, 0.07, 0),
 		Position = UDim2.new(0.25, 0, 0.1, 0),
 		BackgroundTransparency = 0.1,
-		BackgroundColor3 = Color3.fromRGB(20, 20, 24),
+		BackgroundColor3 = RetroTheme.Colors.Panel,
 		TextScaled = true,
 		TextStrokeTransparency = 0,
 		Visible = false,
 	})
-	local toastCorner = Instance.new("UICorner")
-	toastCorner.CornerRadius = UDim.new(0, 8)
-	toastCorner.Parent = toastLabel
+	RetroTheme.outline(toastLabel)
 	toastLabel.Parent = toastGui
 
 	local toastToken = 0
@@ -99,10 +108,10 @@ function MinigameController.Init(context)
 	end
 
 	local REASON_MESSAGES = {
-		complete = { text = "TASK COMPLETE!", color = Color3.fromRGB(90, 230, 120) },
+		complete = { text = "TASK COMPLETE!", color = RetroTheme.Colors.Success },
 		tooFar = { text = "You moved too far away from the task.", color = Color3.fromRGB(230, 190, 70) },
 		gaveup = { text = "You gave up on the task.", color = Color3.fromRGB(230, 190, 70) },
-		failed = { text = "Task failed.", color = Color3.fromRGB(230, 80, 80) },
+		failed = { text = "Task failed.", color = RetroTheme.Colors.Danger },
 	}
 
 	local resultEvent = Net.GetEvent("MinigameResult")
@@ -146,7 +155,8 @@ function MinigameController.Init(context)
 			endGame(false, "gaveup")
 		end
 		activeStationId = stationId
-		titleLabel.Text = config.stationName .. " -- " .. config.description
+		titleLabel.Text = config.stationName
+		subtitleLabel.Text = (config.lore and (config.lore .. " ") or "") .. config.description
 		gui.Enabled = true
 		CursorLock.Push(context.player)
 

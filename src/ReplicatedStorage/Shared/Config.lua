@@ -49,6 +49,23 @@ Config.Lighting = {
 	DeadFixtureFlickerChance = 0.35,
 }
 
+-- Random store-wide blackouts during an active round. Checked once every
+-- CheckInterval seconds, each check rolling CheckInterval/AverageInterval
+-- odds of firing -- a Poisson-style process, so the average gap between
+-- blackouts is AverageInterval but there's never a guaranteed one, per your
+-- call ("no guarantee, just on average every 2 minutes").
+Config.Blackout = {
+	AverageInterval = 120,
+	CheckInterval = 5,
+	Duration = 10,
+}
+
+-- SpongeBob's "lightsOut" quirk (MonsterAI): kills every working light
+-- within LightsOutRadius studs of him as he moves, and lets each one turn
+-- back on this many seconds after he's no longer near it.
+Config.LightsOutRadius = 20
+Config.LightsOutGrace = 15
+
 Config.Round = {
 	MinPlayers = 1,
 	IntermissionTime = 15,
@@ -88,6 +105,7 @@ Config.Sounds = {
 	MinigameSuccess = "", -- one-shot when any station is cleared
 	MinigameFail = "", -- one-shot when any station attempt is failed/given up
 	OvertimeWarning = "", -- one-shot dramatic stinger the instant Overtime begins
+	BlackoutSting = "", -- one-shot the instant a store-wide blackout event kills the lights (SpongeBob's own local quirk is silent, no global event)
 	HeartbeatMaxDistance = 55, -- studs at which the heartbeat starts fading in
 	HeartbeatMinDistance = 10, -- studs at which the heartbeat hits full volume/pitch
 }
@@ -279,7 +297,7 @@ Config.Monsters = {
 		hearingRadius = 22,
 		loseSightTime = 3.5,
 		repathInterval = 0.4,
-		quirk = "giggler",
+		quirk = "lightsOut", -- kills every working light near him as he moves (see MonsterAI:_updateLightsOut); they come back Config.LightsOutGrace seconds after he leaves
 		jumpscareColor = Color3.fromRGB(235, 210, 60),
 		flavor = "He is ready. He was born ready. Are you?",
 		footstepSoundId = "rbxasset://sounds/action_footsteps_plastic.mp3",
@@ -322,10 +340,14 @@ Config.Monsters = {
 -- freeze -- you can still bail and run if a monster shows up mid-minigame.
 Config.MinigameLeashDistance = 16
 
+-- "lore" is CRS's in-universe justification for each task (see the story in
+-- README.md) -- shown in the minigame overlay's title alongside the
+-- existing "description" (which stays the actual how-to-play hint).
 Config.Minigames = {
 	{
 		id = "RestockShelves",
 		stationName = "Restock: Aisle of Regret",
+		lore = "CRS Directive: Shelf-Fill Compliance. Aisle inventory has fallen below acceptable thresholds.",
 		description = "Match falling boxes to the correct shelf slot before time runs out.",
 		duration = 16,
 		roundsToWin = 8,
@@ -335,6 +357,7 @@ Config.Minigames = {
 	{
 		id = "FlatPackAssembly",
 		stationName = "Flat-Pack Rage Build",
+		lore = "CRS Directive: Customer Assembly Verification. Build it exactly as instructed. CRS is always watching build quality.",
 		description = "Repeat the build sequence exactly. One wrong panel and you start over.",
 		duration = 18,
 		roundsToWin = 5,
@@ -344,6 +367,7 @@ Config.Minigames = {
 	{
 		id = "SelfCheckout",
 		stationName = "Self-Checkout Vibe Check",
+		lore = "CRS Directive: Checkout Throughput Audit. Scan accuracy affects your Loyalty standing.",
 		description = "Hold the scanner steady in the green zone. It will not make this easy.",
 		duration = 14,
 		roundsToWin = 10,
@@ -353,6 +377,7 @@ Config.Minigames = {
 	{
 		id = "InventoryCount",
 		stationName = "Inventory Count",
+		lore = "CRS Directive: Manual Stock Reconciliation. The system trusts nothing it hasn't seen a human confirm.",
 		description = "Memorize the shelf, then answer before you forget.",
 		duration = 20,
 		roundsToWin = 5,
@@ -362,6 +387,7 @@ Config.Minigames = {
 	{
 		id = "CustomerRush",
 		stationName = "Customer Service Rush",
+		lore = "CRS Directive: Service Coverage Requirement. Every register must appear staffed at all times.",
 		description = "Every lit register needs you. All of them. At once.",
 		duration = 16,
 		roundsToWin = 8,
@@ -371,6 +397,7 @@ Config.Minigames = {
 	{
 		id = "ForkliftCertification",
 		stationName = "Forklift Certification",
+		lore = "CRS Directive: Heavy Equipment Certification. Uncertified operation voids your Loyalty standing immediately.",
 		description = "Keep it between the lines. Do not think about what's behind you.",
 		duration = 20,
 		roundsToWin = 10,

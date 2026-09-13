@@ -6,6 +6,7 @@ local RunService = game:GetService("RunService")
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local SoundKit = require(game:GetService("ReplicatedStorage").Shared.SoundKit)
 local UIUtil = require(script.Parent.Parent.UIUtil)
+local RetroTheme = require(script.Parent.RetroTheme)
 
 local GRID_COUNT = 9
 local LIT_PER_ROUND = 3
@@ -18,7 +19,7 @@ function CustomerRush.Play(container, config, onComplete)
 	local progress = 0
 	local deadline = os.clock() + config.duration
 
-	local statusLabel = UIUtil.label({
+	local statusLabel = RetroTheme.label({
 		Size = UDim2.new(1, 0, 0.14, 0),
 		TextScaled = true,
 		TextStrokeTransparency = 0,
@@ -26,11 +27,11 @@ function CustomerRush.Play(container, config, onComplete)
 	})
 	statusLabel.Parent = container
 
-	local progressLabel = UIUtil.label({
+	local progressLabel = RetroTheme.label({
 		Size = UDim2.new(1, 0, 0.1, 0),
 		Position = UDim2.new(0, 0, 0.14, 0),
 		TextScaled = true,
-		TextColor3 = Color3.fromRGB(200, 200, 200),
+		TextColor3 = RetroTheme.Colors.Dim,
 		Text = "",
 	})
 	progressLabel.Parent = container
@@ -57,7 +58,7 @@ function CustomerRush.Play(container, config, onComplete)
 
 	local buttons = {}
 	for i = 1, GRID_COUNT do
-		local btn = UIUtil.button({
+		local btn = RetroTheme.button({
 			BackgroundColor3 = IDLE_COLOR,
 			Text = "",
 		})

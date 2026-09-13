@@ -7,6 +7,7 @@ local UserInputService = game:GetService("UserInputService")
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local SoundKit = require(game:GetService("ReplicatedStorage").Shared.SoundKit)
 local UIUtil = require(script.Parent.Parent.UIUtil)
+local RetroTheme = require(script.Parent.RetroTheme)
 
 local SelfCheckout = {}
 
@@ -15,7 +16,7 @@ function SelfCheckout.Play(container, config, onComplete)
 	local deadline = os.clock() + config.duration
 	local scans = 0
 
-	local statusLabel = UIUtil.label({
+	local statusLabel = RetroTheme.label({
 		Size = UDim2.new(1, 0, 0.15, 0),
 		TextScaled = true,
 		TextStrokeTransparency = 0,
@@ -23,11 +24,11 @@ function SelfCheckout.Play(container, config, onComplete)
 	})
 	statusLabel.Parent = container
 
-	local progressLabel = UIUtil.label({
+	local progressLabel = RetroTheme.label({
 		Size = UDim2.new(1, 0, 0.1, 0),
 		Position = UDim2.new(0, 0, 0.15, 0),
 		TextScaled = true,
-		TextColor3 = Color3.fromRGB(200, 200, 200),
+		TextColor3 = RetroTheme.Colors.Dim,
 		Text = "",
 	})
 	progressLabel.Parent = container
@@ -38,6 +39,7 @@ function SelfCheckout.Play(container, config, onComplete)
 		BackgroundColor3 = Color3.fromRGB(50, 50, 55),
 	})
 	track.Parent = container
+	RetroTheme.outline(track, Color3.new(0, 0, 0), 2)
 
 	-- Widened from 0.16 to absorb input/render latency between the marker
 	-- crossing the zone and the click actually registering, and randomized
@@ -65,7 +67,7 @@ function SelfCheckout.Play(container, config, onComplete)
 	})
 	marker.Parent = track
 
-	local scanBtn = UIUtil.button({
+	local scanBtn = RetroTheme.button({
 		Size = UDim2.new(0.3, 0, 0.15, 0),
 		Position = UDim2.new(0.35, 0, 0.6, 0),
 		BackgroundColor3 = Color3.fromRGB(0, 81, 186),

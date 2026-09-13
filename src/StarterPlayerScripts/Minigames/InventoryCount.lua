@@ -6,6 +6,7 @@ local RunService = game:GetService("RunService")
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local SoundKit = require(game:GetService("ReplicatedStorage").Shared.SoundKit)
 local UIUtil = require(script.Parent.Parent.UIUtil)
+local RetroTheme = require(script.Parent.RetroTheme)
 
 local COLORS = {
 	{ name = "Blue", color = Color3.fromRGB(0, 81, 186) },
@@ -23,7 +24,7 @@ function InventoryCount.Play(container, config, onComplete)
 	local progress = 0
 	local deadline = os.clock() + config.duration
 
-	local statusLabel = UIUtil.label({
+	local statusLabel = RetroTheme.label({
 		Size = UDim2.new(1, 0, 0.16, 0),
 		TextScaled = true,
 		TextStrokeTransparency = 0,
@@ -31,11 +32,11 @@ function InventoryCount.Play(container, config, onComplete)
 	})
 	statusLabel.Parent = container
 
-	local progressLabel = UIUtil.label({
+	local progressLabel = RetroTheme.label({
 		Size = UDim2.new(1, 0, 0.1, 0),
 		Position = UDim2.new(0, 0, 0.16, 0),
 		TextScaled = true,
-		TextColor3 = Color3.fromRGB(200, 200, 200),
+		TextColor3 = RetroTheme.Colors.Dim,
 		Text = "",
 	})
 	progressLabel.Parent = container
@@ -97,6 +98,7 @@ function InventoryCount.Play(container, config, onComplete)
 			counts[c.name] += 1
 			local swatch = UIUtil.frame({ BackgroundColor3 = c.color })
 			swatch.Parent = gridHolder
+			RetroTheme.outline(swatch, Color3.new(0, 0, 0), 2)
 		end
 
 		task.delay(FLASH_TIME, function()
@@ -126,7 +128,7 @@ function InventoryCount.Play(container, config, onComplete)
 			end
 
 			for _, n in ipairs(options) do
-				local btn = UIUtil.button({
+				local btn = RetroTheme.button({
 					BackgroundColor3 = Color3.fromRGB(60, 60, 70),
 					Text = tostring(n),
 					TextScaled = true,

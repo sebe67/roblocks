@@ -7,6 +7,7 @@ local Lighting = game:GetService("Lighting")
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local Net = require(game:GetService("ReplicatedStorage").Shared.Net)
 local MonsterAI = require(script.Parent.MonsterAI)
+local StoreTheme = require(script.Parent.StoreTheme)
 
 local GameState = {}
 GameState.__index = GameState
@@ -79,6 +80,7 @@ function GameState:_playRound()
 	self:_resetOvertimeVisuals()
 	MonsterAI.ExitOvertime()
 	self:_setMonstersPaused(false)
+	StoreTheme.SetBlackoutsEnabled(self.maze, true)
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		self.playerService:SpawnForRound(player)
@@ -115,6 +117,7 @@ function GameState:_playRound()
 
 	self.playerService.roundActive = false
 	self:_setMonstersPaused(true)
+	StoreTheme.SetBlackoutsEnabled(self.maze, false)
 end
 
 function GameState:_startOvertime()

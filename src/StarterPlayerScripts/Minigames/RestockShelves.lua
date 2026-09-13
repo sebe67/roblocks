@@ -5,6 +5,7 @@ local RunService = game:GetService("RunService")
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local SoundKit = require(game:GetService("ReplicatedStorage").Shared.SoundKit)
 local UIUtil = require(script.Parent.Parent.UIUtil)
+local RetroTheme = require(script.Parent.RetroTheme)
 
 local COLORS = {
 	{ name = "Blue", color = Color3.fromRGB(0, 81, 186) },
@@ -21,7 +22,7 @@ function RestockShelves.Play(container, config, onComplete)
 	local deadline = os.clock() + config.duration
 	local currentTarget
 
-	local targetLabel = UIUtil.label({
+	local targetLabel = RetroTheme.label({
 		Size = UDim2.new(1, 0, 0.25, 0),
 		TextScaled = true,
 		TextStrokeTransparency = 0,
@@ -29,11 +30,11 @@ function RestockShelves.Play(container, config, onComplete)
 	})
 	targetLabel.Parent = container
 
-	local progressLabel = UIUtil.label({
+	local progressLabel = RetroTheme.label({
 		Size = UDim2.new(1, 0, 0.12, 0),
 		Position = UDim2.new(0, 0, 0.25, 0),
 		TextScaled = true,
-		TextColor3 = Color3.fromRGB(200, 200, 200),
+		TextColor3 = RetroTheme.Colors.Dim,
 		Text = "",
 	})
 	progressLabel.Parent = container
@@ -55,7 +56,7 @@ function RestockShelves.Play(container, config, onComplete)
 	end
 
 	for _, c in ipairs(COLORS) do
-		local btn = UIUtil.button({
+		local btn = RetroTheme.button({
 			BackgroundColor3 = c.color,
 			Text = c.name,
 			TextScaled = true,
