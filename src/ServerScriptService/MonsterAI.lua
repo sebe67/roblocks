@@ -399,7 +399,19 @@ function MonsterAI:Update(dt)
 
 			if now - self.lastPathTime > def.repathInterval then
 				self.lastPathTime = now
-				self:_moveAlongPath(self:_pathTo(root.Position) or {})
+				local pathExhausted = not self.currentPath or not self.currentPath[self.pathIndex]
+				local targetMoved = (not self.lastChaseTargetPos)
+					or (root.Position - self.lastChaseTargetPos).Magnitude > 8
+				-- Recomputing a brand new PathfindingService route every
+				-- single interval -- even when the target has barely moved
+				-- -- lets it flip-flop between two similarly-good routes
+				-- through the maze's loops/shortcuts, which reads as
+				-- indecisive/erratic. Only replace the route when it's
+				-- actually stale.
+				if pathExhausted or targetMoved then
+					self.lastChaseTargetPos = root.Position
+					self:_moveAlongPath(self:_pathTo(root.Position) or {})
+				end
 			end
 			self.humanoid.WalkSpeed = self:_applyQuirkSpeed(def.chaseSpeed)
 			self:_followCurrentPath(dt)
