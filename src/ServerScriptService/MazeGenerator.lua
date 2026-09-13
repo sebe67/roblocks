@@ -297,6 +297,7 @@ function MazeGenerator.Generate()
 			fixture.Name = string.format("Fixture_%d_%d", x, y)
 			fixture.Anchored = true
 			fixture.CanCollide = false
+			fixture.CanQuery = false
 			fixture.Size = Vector3.new(cellSize * 0.35, 0.3, cellSize * 0.35)
 			fixture.CFrame = CFrame.new(center + Vector3.new(0, wallHeight - 0.3, 0))
 			fixture.Material = Enum.Material.Neon
@@ -341,6 +342,14 @@ function MazeGenerator.Generate()
 			shelf.Name = "Shelf"
 			shelf.Anchored = true
 			shelf.CanCollide = false
+			-- Purely decorative (juts out from the wall into the room for
+			-- looks), but a raycast query still hits a part with CanCollide
+			-- false unless CanQuery is off too -- left on, these were being
+			-- treated as real obstacles by monster sight/chase raycasts,
+			-- flipping "is there a clear line to the player" on and off as
+			-- shelves entered/left the line and causing exactly the
+			-- zig-zag/stop-and-restart chase behavior reported.
+			shelf.CanQuery = false
 			shelf.Material = Enum.Material.Metal
 			-- Shelves get their own occasional-accent roll too, independent
 			-- of the wall they're on -- keeps "other colors here and there"

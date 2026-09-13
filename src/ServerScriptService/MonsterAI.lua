@@ -253,10 +253,21 @@ function MonsterAI:_canSee(targetRoot)
 	return true
 end
 
--- A cheap, unobstructed-line-of-travel check (as opposed to _canSee, which
--- also checks FOV/range for spotting). Used so chasing can just walk
--- straight at a player when nothing's in the way, only falling back to
--- PathfindingService when a wall is actually blocking the direct route.
+-- An unobstructed-line-of-travel check (as opposed to _canSee, which also
+-- checks FOV/range for spotting). Used so chasing can just walk straight at
+-- a player when nothing's in the way, only falling back to PathfindingService
+-- when a wall is actually blocking the direct route.
+--
+-- Uses a spherecast sized to the same AgentRadius PathfindingService plans
+-- clearance around (def.pathAgentRadius, same default of 2 as _pathTo), not
+-- a zero-width raycast. A thin centerline ray can read "clear" for a line
+-- that grazes a wall corner or doorway jamb close enough that the monster's
+-- actual body still clips it -- the collision response to that scrape (a
+-- shove sideways, a moment of stuck friction) is exactly the zig-zag and
+-- slower-than-expected chase reported even against a fully stationary
+-- player. Matching the radius to what pathfinding already treats as "fits"
+-- keeps the two systems in agreement: if this says clear, the body actually
+-- fits, full stop.
 function MonsterAI:_hasClearPath(targetPos)
 	local origin = self.root.Position
 	local direction = targetPos - origin
@@ -266,7 +277,8 @@ function MonsterAI:_hasClearPath(targetPos)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = { self.model }
-	local result = workspace:Raycast(origin, direction, params)
+	local radius = self.def.pathAgentRadius or 2
+	local result = workspace:Spherecast(origin, radius, direction, params)
 	if not result then
 		return true
 	end

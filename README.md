@@ -37,6 +37,12 @@ The store, monsters, and stations are generated fresh by
 `Main.server.lua` every time the server starts, so there's nothing to build
 or bake ahead of time.
 
+**You can delete the default Baseplate.** Nothing in this codebase
+references it — the store builds its own floors, and `MazeGenerator.lua`
+creates its own `SpawnLocation`s at the entrance before any player joins, so
+Roblox spawns players there regardless of whatever else is (or isn't) sitting
+in Workspace. A totally blank new place works fine.
+
 ## What's actually implemented
 
 - **Procedural store** (`MazeGenerator.lua`): not a uniform small-cell maze
@@ -62,7 +68,17 @@ or bake ahead of time.
   exit, and six minigame rooms.
 - **Lighting** (`StoreTheme.lua`): dim ambient + fog + a subtle atmosphere,
   with only roughly 1-in-3 ceiling fixtures actually lit, plus some dead
-  fixtures that flicker briefly at random. Dim, not pitch black.
+  fixtures that flicker briefly at random. Dim, not pitch black. Every
+  ceiling fixture is its own addressable `Part` (`Fixture_x_y` in
+  `maze.model.Fixtures`, one per grid cell) with its own `PointLight` — call
+  `StoreTheme.SetFixtureWorking(maze, x, y, true/false)` to flip any single
+  one on or off for a scripted event (power outage, a monster ability, a
+  puzzle); it updates the light, the fixture's glow color, and the
+  `Working` attribute together, so a scripted toggle reads identically to a
+  naturally-dead fixture everywhere else that attribute matters (the
+  Grinch's darkBoost quirk). Try it live with `/light <x> <y> <on|off>` in
+  chat (wired up in `Main.server.lua`, open to any player for now — gate it
+  before this goes public, same as `/godmode`).
 - **8 monsters**, each with its own stat block and one mechanical quirk, all
   tuned in `ReplicatedStorage/Shared/Config.lua` (see below).
 - **Sight-based AI** (`MonsterAI.lua`): a Patrol → Investigate → Chase →
@@ -70,7 +86,16 @@ or bake ahead of time.
   directly saw a player (distance + field-of-view cone + an unobstructed
   raycast) — it never teleports knowledge of your position into itself.
   "Investigate" (from noise or Dora's callout) only ever sends it toward a
-  *location*.
+  *location*. Chasing walks straight at your live position when the route is
+  genuinely clear, falling back to `PathfindingService` only when a wall
+  blocks it — "clear" is checked with a spherecast sized to the monster's
+  own `pathAgentRadius`, not a zero-width ray, so a corner/doorway jamb the
+  monster's actual body wouldn't fit through is correctly treated as
+  blocked instead of scraping it (which was the source of the sideways
+  zig-zag and slower-than-expected closing speed reported even chasing a
+  stationary target). Decorative parts (shelves, etc.) are also flagged
+  `CanQuery = false` so they no longer spuriously block that same sight/path
+  raycast despite never physically colliding with anything.
 - **Sprinting**: hold Shift, infinite, no stamina bar (`SprintController.lua`).
 - **3 minigame stations** that require real attention and periodically ping
   every nearby monster while active (`MinigameService.lua` +

@@ -35,14 +35,25 @@ end)
 
 local gameState = GameState.new(maze, playerService, monsters, minigameService, exitService)
 
--- Debug command: type /godmode in chat to skip straight to the Overtime
--- finale without waiting out Config.Round.MaxRoundTime. Open to any player
--- for now since this is still in active testing -- gate it (e.g. to
--- specific UserIds) before this ever goes public.
+-- Debug commands, both open to any player for now since this is still in
+-- active testing -- gate them (e.g. to specific UserIds) before this ever
+-- goes public.
 local function onChatted(player, message)
-	if message:lower():match("^/godmode%s*$") then
+	local lower = message:lower()
+	if lower:match("^/godmode%s*$") then
 		gameState:RequestOvertime()
 		print(string.format("[Debug] %s triggered /godmode.", player.Name))
+		return
+	end
+
+	-- /light <x> <y> <on|off> -- flips one specific ceiling fixture, by its
+	-- grid cell, to prove out per-light control (StoreTheme.SetFixtureWorking)
+	-- without needing to wire up a real in-game trigger for it yet.
+	local xStr, yStr, state = lower:match("^/light%s+(%d+)%s+(%d+)%s+(on|off)%s*$")
+	if xStr then
+		local x, y = tonumber(xStr), tonumber(yStr)
+		local ok = StoreTheme.SetFixtureWorking(maze, x, y, state == "on")
+		print(string.format("[Debug] %s set light (%d,%d) %s -- %s", player.Name, x, y, state, ok and "OK" or "no such fixture"))
 	end
 end
 

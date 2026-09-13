@@ -40,6 +40,51 @@ function StoreTheme.Apply()
 	end
 end
 
+-- Every ceiling light is its own addressable Part ("Fixture_x_y" under
+-- maze.model.Fixtures, one per grid cell) with its own PointLight -- there's
+-- no single shared light to dim, each one can be driven independently.
+function StoreTheme.GetFixture(maze, x, y)
+	local fixturesFolder = maze.model:FindFirstChild("Fixtures")
+	return fixturesFolder and fixturesFolder:FindFirstChild(string.format("Fixture_%d_%d", x, y))
+end
+
+-- Turns one specific ceiling fixture on or off -- for a scripted
+-- power-outage event, a monster ability that kills nearby lights, a puzzle,
+-- whatever. Updates the PointLight, the fixture's own glow color, and its
+-- "Working" attribute together, so a scripted toggle behaves exactly like a
+-- naturally-dead fixture would to everything that already reads that
+-- attribute (MonsterAI:_inDarkCell, and through it the Grinch's darkBoost
+-- sight-range quirk).
+function StoreTheme.SetFixtureWorking(maze, x, y, working)
+	local fixture = StoreTheme.GetFixture(maze, x, y)
+	if not fixture then
+		return false
+	end
+	local cfg = Config.Lighting
+	local light = fixture:FindFirstChildOfClass("PointLight")
+	if working then
+		if not light then
+			light = Instance.new("PointLight")
+			light.Range = cfg.FixtureRange
+			light.Brightness = cfg.FixtureBrightness
+			light.Color = cfg.FixtureColor
+			light.Parent = fixture
+		end
+		light.Enabled = true
+		fixture.Color = cfg.FixtureColor
+		fixture:SetAttribute("Working", true)
+		fixture:SetAttribute("Flickering", nil)
+	else
+		if light then
+			light.Enabled = false
+		end
+		fixture.Color = Color3.fromRGB(60, 60, 60)
+		fixture:SetAttribute("Working", false)
+		fixture:SetAttribute("Flickering", nil)
+	end
+	return true
+end
+
 -- Randomly clicks a handful of "dead" fixtures on for a moment then off
 -- again, sourced from Fixture parts tagged Flickering=true by MazeGenerator.
 function StoreTheme.StartFlicker(storeModel)
