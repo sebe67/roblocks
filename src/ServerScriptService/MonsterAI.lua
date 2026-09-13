@@ -147,11 +147,10 @@ local function createRig(def)
 	return model, humanoid, root
 end
 
-function MonsterAI.new(def, maze, waypointGraph)
+function MonsterAI.new(def, maze)
 	local self = setmetatable({}, MonsterAI)
 	self.def = def
 	self.maze = maze
-	self.waypointGraph = waypointGraph
 	self.state = "Patrol"
 	self.target = nil
 	self.lastKnownPos = nil
@@ -276,12 +275,14 @@ end
 
 function MonsterAI:_inDarkCell()
 	local cellSize = self.maze.cellSize
-	local x = math.floor(self.root.Position.X / cellSize) + 1
-	local y = math.floor(self.root.Position.Z / cellSize) + 1
-	x = math.clamp(x, 1, self.maze.gridWidth)
-	y = math.clamp(y, 1, self.maze.gridHeight)
-	-- Cheap proxy: rail cells are the well-lit main aisles.
-	return not (self.maze.isRailIndex(x) or self.maze.isRailIndex(y))
+	local x = math.clamp(math.floor(self.root.Position.X / cellSize) + 1, 1, self.maze.gridWidth)
+	local y = math.clamp(math.floor(self.root.Position.Z / cellSize) + 1, 1, self.maze.gridHeight)
+	-- Checks the actual ceiling fixture for this cell rather than a proxy --
+	-- genuinely dark (dead/flickering fixture) cells give the Grinch his
+	-- sight/range boost.
+	local fixturesFolder = self.maze.model:FindFirstChild("Fixtures")
+	local fixture = fixturesFolder and fixturesFolder:FindFirstChild(string.format("Fixture_%d_%d", x, y))
+	return not (fixture and fixture:GetAttribute("Working"))
 end
 
 function MonsterAI:_scanForTargets()
@@ -325,9 +326,9 @@ function MonsterAI.BroadcastCallout(position, excludeMonster)
 	end
 end
 
-local function computeNavmeshPath(fromPos, toPos, agentScale)
+local function computeNavmeshPath(fromPos, toPos, agentRadius, agentScale)
 	local path = PathfindingService:CreatePath({
-		AgentRadius = 2 * agentScale,
+		AgentRadius = agentRadius,
 		AgentHeight = 5 * agentScale,
 		AgentCanJump = false,
 		WaypointSpacing = 4,
@@ -376,19 +377,13 @@ function MonsterAI:_followCurrentPath(dt)
 end
 
 function MonsterAI:_randomPatrolTarget()
-	if self.def.quirk == "railOnly" then
-		return self.waypointGraph:RandomNode()
-	end
 	local x = math.random(1, self.maze.gridWidth)
 	local y = math.random(1, self.maze.gridHeight)
 	return self.maze.cellToWorld(x, y)
 end
 
 function MonsterAI:_pathTo(destination)
-	if self.def.quirk == "railOnly" then
-		return self.waypointGraph:FindPath(self.root.Position, destination)
-	end
-	return computeNavmeshPath(self.root.Position, destination, self.def.scale)
+	return computeNavmeshPath(self.root.Position, destination, self.def.pathAgentRadius or 2, self.def.scale)
 end
 
 -- Requests a path toward destination unless one is already in flight, and
@@ -444,9 +439,10 @@ end
 
 -- Overtime: no sight/range checks, just always know exactly where the
 -- nearest alive player is and beeline for them at a much higher speed.
--- Still respects Thomas's rail restriction and still falls back to
--- PathfindingService (much more frequently) when a wall blocks the direct
--- line -- "godlevel pathfinding," not "walks through walls."
+-- Still respects Thomas's wide-body restriction (see def.quirk == "wideBody"
+-- below) and still falls back to PathfindingService (much more frequently)
+-- when a wall blocks the direct line -- "godlevel pathfinding," not "walks
+-- through walls."
 function MonsterAI:_updateGodChase(now)
 	local def = self.def
 	local nearestPlayer, nearestRoot, nearestDist
@@ -466,7 +462,7 @@ function MonsterAI:_updateGodChase(now)
 	self.humanoid.WalkSpeed = def.chaseSpeed * Config.Round.OvertimeSpeedMultiplier
 	self:_updateFootstepAudio()
 
-	if def.quirk ~= "railOnly" and self:_hasClearPath(nearestRoot.Position) then
+	if def.quirk ~= "wideBody" and self:_hasClearPath(nearestRoot.Position) then
 		self.currentPath = nil
 		local moved = (not self._lastCommandedPoint)
 			or (self._lastCommandedPoint - nearestRoot.Position).Magnitude > 0.5
@@ -475,7 +471,8 @@ function MonsterAI:_updateGodChase(now)
 			self._lastCommandedPoint = nearestRoot.Position
 		end
 	else
-		if now - self.lastPathTime > Config.Round.OvertimeRepathInterval then
+		local pathExhausted = not self.currentPath or not self.currentPath[self.pathIndex]
+		if pathExhausted or now - self.lastPathTime > Config.Round.OvertimeRepathInterval then
 			self.lastPathTime = now
 			self:_moveAlongPath(self:_pathTo(nearestRoot.Position) or {})
 		end
@@ -537,7 +534,7 @@ function MonsterAI:Update(dt)
 			-- PathfindingService, nothing to flip-flop between -- this is
 			-- deliberately the simple case. Only fall back to pathfinding
 			-- when a wall is actually blocking that direct route.
-			if def.quirk ~= "railOnly" and self:_hasClearPath(root.Position) then
+			if def.quirk ~= "wideBody" and self:_hasClearPath(root.Position) then
 				self.currentPath = nil
 				local moved = (not self._lastCommandedPoint)
 					or (self._lastCommandedPoint - root.Position).Magnitude > 0.5
@@ -546,18 +543,27 @@ function MonsterAI:Update(dt)
 					self._lastCommandedPoint = root.Position
 				end
 			else
-				if now - self.lastPathTime > def.repathInterval then
+				local pathExhausted = not self.currentPath or not self.currentPath[self.pathIndex]
+				if pathExhausted then
+					-- No path in flight at all right now -- e.g. we just lost
+					-- the direct line rounding a corner. Get one immediately;
+					-- don't sit still waiting out the repath throttle below,
+					-- which was causing a freeze right at the moments (corner
+					-- transitions) where responsiveness matters most.
 					self.lastPathTime = now
-					local pathExhausted = not self.currentPath or not self.currentPath[self.pathIndex]
-					local targetMoved = (not self.lastChaseTargetPos)
-						or (root.Position - self.lastChaseTargetPos).Magnitude > 8
+					self.lastChaseTargetPos = root.Position
+					self:_moveAlongPath(self:_pathTo(root.Position) or {})
+				elseif now - self.lastPathTime > def.repathInterval then
 					-- Recomputing a brand new PathfindingService route every
 					-- single interval -- even when the target has barely
 					-- moved -- lets it flip-flop between two similarly-good
 					-- routes through the maze's loops/shortcuts, which reads
-					-- as indecisive/erratic. Only replace the route when
-					-- it's actually stale.
-					if pathExhausted or targetMoved then
+					-- as indecisive/erratic. Only replace an in-flight route
+					-- once the target has moved meaningfully.
+					local targetMoved = (not self.lastChaseTargetPos)
+						or (root.Position - self.lastChaseTargetPos).Magnitude > 8
+					if targetMoved then
+						self.lastPathTime = now
 						self.lastChaseTargetPos = root.Position
 						self:_moveAlongPath(self:_pathTo(root.Position) or {})
 					end

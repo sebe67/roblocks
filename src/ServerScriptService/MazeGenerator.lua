@@ -1,10 +1,14 @@
--- Procedurally builds the store: a grid maze of "showroom" cells carved with
--- a recursive backtracker, with a handful of forced-open "rail" rows/columns
--- that form wide main walkways (these double as the only cells Thomas the
--- Tank Engine is allowed to travel through -- see WaypointGraph.lua).
+-- Procedurally builds the store as a series of big rectangular rooms
+-- (3-5 base cells per side) connected mostly by narrow doorways and
+-- occasionally by wider open "hallway" gaps, instead of a uniform
+-- small-cell maze. Each room's interior is fully open floor space; walls
+-- only exist at room boundaries. The whole map is split into four
+-- roughly-quadrant color zones so wall color reads as "you're in a
+-- different wing" rather than random noise, with an occasional
+-- off-palette wall/shelf for texture.
 --
 -- Returns a description table other server modules use to find the
--- entrance, exit door, minigame station anchors, and rail-cell positions.
+-- entrance, exit door, and minigame station anchors.
 
 local CollectionService = game:GetService("CollectionService")
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
@@ -25,8 +29,59 @@ local WALL_PALETTE = {
 	Color3.fromRGB(150, 116, 78), -- particleboard tan
 }
 
-local function inBounds(x, y, w, h)
-	return x >= 1 and x <= w and y >= 1 and y <= h
+-- Greedily tiles the whole grid into non-overlapping rectangular rooms
+-- sized between minSize and maxSize cells per side (clipped by grid edges
+-- and by earlier rooms, so edge/corner rooms are sometimes smaller).
+-- Returns the room list and a cellBlock[x][y] -> room index lookup.
+local function partitionRooms(width, height, minSize, maxSize)
+	local occupied = {}
+	local cellBlock = {}
+	for x = 1, width do
+		occupied[x] = {}
+		cellBlock[x] = {}
+	end
+
+	local function canPlace(x, y, w, h)
+		if x + w - 1 > width or y + h - 1 > height then
+			return false
+		end
+		for yy = y, y + h - 1 do
+			for xx = x, x + w - 1 do
+				if occupied[xx][yy] then
+					return false
+				end
+			end
+		end
+		return true
+	end
+
+	local rooms = {}
+	for y = 1, height do
+		for x = 1, width do
+			if not occupied[x][y] then
+				local targetW = math.random(minSize, maxSize)
+				local targetH = math.random(minSize, maxSize)
+				local w, h = 1, 1
+				while w < targetW and canPlace(x, y, w + 1, h) do
+					w += 1
+				end
+				while h < targetH and canPlace(x, y, w, h + 1) do
+					h += 1
+				end
+
+				local roomIndex = #rooms + 1
+				table.insert(rooms, { x1 = x, y1 = y, x2 = x + w - 1, y2 = y + h - 1 })
+				for yy = y, y + h - 1 do
+					for xx = x, x + w - 1 do
+						occupied[xx][yy] = true
+						cellBlock[xx][yy] = roomIndex
+					end
+				end
+			end
+		end
+	end
+
+	return rooms, cellBlock
 end
 
 local function generateGrid(width, height)
@@ -34,73 +89,119 @@ local function generateGrid(width, height)
 	for x = 1, width do
 		cells[x] = {}
 		for y = 1, height do
-			cells[x][y] = { N = true, S = true, E = true, W = true, visited = false }
+			cells[x][y] = { N = true, S = true, E = true, W = true }
 		end
 	end
 
-	local stack = { { 1, 1 } }
-	cells[1][1].visited = true
+	local rooms, cellBlock = partitionRooms(width, height, Config.Maze.MinRoomSize, Config.Maze.MaxRoomSize)
 
-	while #stack > 0 do
-		local cx, cy = stack[#stack][1], stack[#stack][2]
-		local candidates = {}
-		for name, dir in pairs(DIRS) do
-			local nx, ny = cx + dir.dx, cy + dir.dy
-			if inBounds(nx, ny, width, height) and not cells[nx][ny].visited then
-				table.insert(candidates, { name = name, nx = nx, ny = ny })
+	-- Every cell inside a room is open to every other cell in that same
+	-- room -- one big open floor, not a mini-maze.
+	for _, room in ipairs(rooms) do
+		for x = room.x1, room.x2 do
+			for y = room.y1, room.y2 do
+				if x < room.x2 then
+					cells[x][y].E = false
+					cells[x + 1][y].W = false
+				end
+				if y < room.y2 then
+					cells[x][y].S = false
+					cells[x][y + 1].N = false
+				end
 			end
 		end
+	end
 
-		if #candidates == 0 then
+	-- Candidate connector edges between two DIFFERENT rooms, grouped by
+	-- room-pair so a spanning-tree walk can pick one connector per pair
+	-- (rather than working at the fine-cell level, which would ignore room
+	-- shape entirely).
+	local pairEdges = {}
+	local function addCandidate(x, y, dir, nx, ny)
+		local a, b = cellBlock[x][y], cellBlock[nx][ny]
+		if a == b then
+			return
+		end
+		local key = a < b and (a .. "-" .. b) or (b .. "-" .. a)
+		pairEdges[key] = pairEdges[key] or {}
+		table.insert(pairEdges[key], { x = x, y = y, dir = dir })
+	end
+	for x = 1, width do
+		for y = 1, height do
+			if x < width then
+				addCandidate(x, y, "E", x + 1, y)
+			end
+			if y < height then
+				addCandidate(x, y, "S", x, y + 1)
+			end
+		end
+	end
+
+	local adjacency = {}
+	for key in pairs(pairEdges) do
+		local aStr, bStr = key:match("(%d+)-(%d+)")
+		local a, b = tonumber(aStr), tonumber(bStr)
+		adjacency[a] = adjacency[a] or {}
+		adjacency[b] = adjacency[b] or {}
+		table.insert(adjacency[a], { other = b, key = key })
+		table.insert(adjacency[b], { other = a, key = key })
+	end
+
+	local edgeStyle = {}
+	local function markStyle(x, y, dir, style)
+		edgeStyle[x] = edgeStyle[x] or {}
+		edgeStyle[x][y] = edgeStyle[x][y] or {}
+		edgeStyle[x][y][dir] = style
+	end
+
+	local function openConnector(key)
+		local candidates = pairEdges[key]
+		local edge = candidates[math.random(1, #candidates)]
+		cells[edge.x][edge.y][edge.dir] = false
+		local opposite = DIRS[edge.dir].opposite
+		local nx, ny = edge.x + DIRS[edge.dir].dx, edge.y + DIRS[edge.dir].dy
+		cells[nx][ny][opposite] = false
+		-- Most connections are a proper doorway; occasionally a wider,
+		-- fully-open "hallway" gap instead -- and the only kind of
+		-- connection Thomas (too wide for doorways) can use between rooms.
+		local style = (math.random() < Config.Maze.HallwayChance) and "hallway" or "doorway"
+		markStyle(edge.x, edge.y, edge.dir, style)
+		markStyle(nx, ny, opposite, style)
+	end
+
+	-- Recursive-backtracker spanning walk over ROOMS (not fine cells) --
+	-- guarantees every room is reachable from the entrance's room.
+	local startRoom = cellBlock[1][1]
+	local visited = { [startRoom] = true }
+	local usedKeys = {}
+	local stack = { startRoom }
+	while #stack > 0 do
+		local current = stack[#stack]
+		local options = {}
+		for _, edge in ipairs(adjacency[current] or {}) do
+			if not visited[edge.other] then
+				table.insert(options, edge)
+			end
+		end
+		if #options == 0 then
 			table.remove(stack)
 		else
-			local pick = candidates[math.random(1, #candidates)]
-			cells[cx][cy][pick.name] = false
-			cells[pick.nx][pick.ny][DIRS[pick.name].opposite] = false
-			cells[pick.nx][pick.ny].visited = true
-			table.insert(stack, { pick.nx, pick.ny })
+			local pick = options[math.random(1, #options)]
+			openConnector(pick.key)
+			usedKeys[pick.key] = true
+			visited[pick.other] = true
+			table.insert(stack, pick.other)
 		end
 	end
 
-	-- Knock down extra walls so the maze has loops/shortcuts, not just one
-	-- true path -- makes evasion actually possible.
-	for x = 1, width do
-		for y = 1, height do
-			if x < width and cells[x][y].E and math.random() < Config.Maze.LoopChance then
-				cells[x][y].E = false
-				cells[x + 1][y].W = false
-			end
-			if y < height and cells[x][y].S and math.random() < Config.Maze.LoopChance then
-				cells[x][y].S = false
-				cells[x][y + 1].N = false
-			end
+	-- A few extra connections between already-linked rooms for shortcuts.
+	for key in pairs(pairEdges) do
+		if not usedKeys[key] and math.random() < Config.Maze.LoopChance then
+			openConnector(key)
 		end
 	end
 
-	return cells
-end
-
-local function isRailIndex(i)
-	return (i - 1) % Config.Maze.MainCorridorEvery == 0
-end
-
--- Every rail COLUMN is forced open top-to-bottom and every rail ROW is
--- forced open left-to-right, turning them into continuous wide boulevards
--- that cut through the shelf-maze at regular intervals -- and guaranteeing
--- the rail sub-graph WaypointGraph builds for Thomas is fully connected.
-local function forceOpenRailLattice(cells, width, height)
-	for x = 1, width do
-		for y = 1, height do
-			if isRailIndex(x) and y < height then
-				cells[x][y].S = false
-				cells[x][y + 1].N = false
-			end
-			if isRailIndex(y) and x < width then
-				cells[x][y].E = false
-				cells[x + 1][y].W = false
-			end
-		end
-	end
+	return cells, edgeStyle, rooms
 end
 
 function MazeGenerator.Generate()
@@ -109,8 +210,7 @@ function MazeGenerator.Generate()
 	local wallHeight = Config.Maze.WallHeight
 	local wallThickness = Config.Maze.WallThickness
 
-	local cells = generateGrid(W, H)
-	forceOpenRailLattice(cells, W, H)
+	local cells, edgeStyle = generateGrid(W, H)
 
 	local storeModel = Instance.new("Model")
 	storeModel.Name = "Store"
@@ -125,6 +225,19 @@ function MazeGenerator.Generate()
 
 	local function cellToWorld(x, y)
 		return Vector3.new((x - 1) * cellSize, 0, (y - 1) * cellSize)
+	end
+
+	-- Four roughly-quadrant color "wings" so wall color reads as a sense of
+	-- place rather than randomness, with an occasional off-palette wall or
+	-- shelf so it doesn't read as forced monotone either.
+	local midX, midY = math.ceil(W / 2), math.ceil(H / 2)
+	local function pickWallColor(x, y)
+		if math.random() < Config.Maze.ZoneAccentChance then
+			return WALL_PALETTE[math.random(1, #WALL_PALETTE)]
+		end
+		local zoneIndex = (x <= midX and 1 or 2) + (y <= midY and 0 or 2)
+		local zone = Config.Maze.ColorZones[zoneIndex]
+		return zone and zone.primary or WALL_PALETTE[math.random(1, #WALL_PALETTE)]
 	end
 
 	local entranceCell = { x = 1, y = 1 }
@@ -209,7 +322,7 @@ function MazeGenerator.Generate()
 		end
 	end
 
-	local function addShelfDetail(wallPart, dir)
+	local function addShelfDetail(wallPart, dir, x, y)
 		if math.random() > 0.4 then
 			return
 		end
@@ -223,13 +336,16 @@ function MazeGenerator.Generate()
 		local thickness = horizontal and wallPart.Size.Z or wallPart.Size.X
 		local outwardOffset = sign * (thickness / 2 + depth / 2)
 
-		for i, frac in ipairs({ 0.35, 0.65 }) do
+		for _, frac in ipairs({ 0.35, 0.65 }) do
 			local shelf = Instance.new("Part")
 			shelf.Name = "Shelf"
 			shelf.Anchored = true
 			shelf.CanCollide = false
 			shelf.Material = Enum.Material.Metal
-			shelf.Color = Color3.fromRGB(90, 90, 96)
+			-- Shelves get their own occasional-accent roll too, independent
+			-- of the wall they're on -- keeps "other colors here and there"
+			-- from being tied 1:1 to whichever wall happens to have one.
+			shelf.Color = math.random() < 0.5 and Color3.fromRGB(90, 90, 96) or pickWallColor(x, y)
 			if horizontal then
 				shelf.Size = Vector3.new(wallPart.Size.X * 0.9, 0.3, depth)
 				shelf.CFrame = wallPart.CFrame * CFrame.new(0, wallPart.Size.Y * (frac - 0.5), outwardOffset)
@@ -266,7 +382,6 @@ function MazeGenerator.Generate()
 
 	local function buildWall(x, y, dir)
 		local center = cellToWorld(x, y)
-		local horizontal = (dir == "N" or dir == "S") -- wall spans along X
 		local size, cf
 		-- N/S walls are trimmed by one wallThickness so they meet E/W walls
 		-- edge-to-edge at corners instead of overlapping into them --
@@ -292,22 +407,11 @@ function MazeGenerator.Generate()
 		wall.Size = size
 		wall.CFrame = cf
 		wall.Material = math.random() < 0.3 and Enum.Material.Wood or Enum.Material.SmoothPlastic
-		wall.Color = WALL_PALETTE[math.random(1, #WALL_PALETTE)]
+		wall.Color = pickWallColor(x, y)
 		wall.Parent = folders.Walls
 
-		addShelfDetail(wall, dir)
+		addShelfDetail(wall, dir, x, y)
 		maybeAddSign(wall)
-	end
-
-	-- Rail boulevards (see forceOpenRailLattice) stay fully open on purpose
-	-- -- they're the wide main aisles. Every other open passage between
-	-- cells gets a proper doorway-sized gap instead of the whole room edge,
-	-- so you can't see clear across into three other rooms from a doorway.
-	local function isBoulevardEdge(dir, x, y)
-		if dir == "N" or dir == "S" then
-			return isRailIndex(x)
-		end
-		return isRailIndex(y)
 	end
 
 	local doorwayWidth = Config.Maze.DoorwayWidth
@@ -332,7 +436,7 @@ function MazeGenerator.Generate()
 			stub.Size = Vector3.new(sizeX, wallHeight, sizeZ)
 			stub.CFrame = CFrame.new(center + Vector3.new(offsetX, wallHeight / 2, offsetZ))
 			stub.Material = math.random() < 0.3 and Enum.Material.Wood or Enum.Material.SmoothPlastic
-			stub.Color = WALL_PALETTE[math.random(1, #WALL_PALETTE)]
+			stub.Color = pickWallColor(x, y)
 			stub.Parent = folders.Walls
 			return stub
 		end
@@ -352,13 +456,17 @@ function MazeGenerator.Generate()
 		end
 	end
 
-	-- Wall present -> solid wall. Open and not a boulevard -> narrow
-	-- doorway. Open and a boulevard -> nothing (fully open main aisle).
+	-- Wall present -> solid wall. Open + tagged "doorway" -> narrow gap.
+	-- Open + tagged "hallway" (or untagged, i.e. inside one big room) ->
+	-- nothing, fully open.
 	local function processEdge(x, y, dir)
 		if cells[x][y][dir] then
 			buildWall(x, y, dir)
-		elseif not isBoulevardEdge(dir, x, y) then
-			buildDoorway(x, y, dir)
+		else
+			local style = edgeStyle[x] and edgeStyle[x][y] and edgeStyle[x][y][dir]
+			if style == "doorway" then
+				buildDoorway(x, y, dir)
+			end
 		end
 	end
 
@@ -524,16 +632,6 @@ function MazeGenerator.Generate()
 		end
 	end
 
-	-- Rail waypoints (for Thomas's restricted graph) -- every rail cell.
-	local railWaypoints = {}
-	for x = 1, W do
-		for y = 1, H do
-			if isRailIndex(x) or isRailIndex(y) then
-				table.insert(railWaypoints, { x = x, y = y, worldPos = cellToWorld(x, y) })
-			end
-		end
-	end
-
 	storeModel.Parent = workspace
 
 	return {
@@ -543,13 +641,11 @@ function MazeGenerator.Generate()
 		gridHeight = H,
 		cellSize = cellSize,
 		cellToWorld = cellToWorld,
-		isRailIndex = isRailIndex,
 		entranceCell = entranceCell,
 		exitCell = exitCell,
 		exitDoor = exitDoor,
 		escapeZone = escapeZone,
 		minigameCells = minigameCells,
-		railWaypoints = railWaypoints,
 		entranceWorldPos = cellToWorld(entranceCell.x, entranceCell.y),
 	}
 end

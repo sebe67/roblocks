@@ -88,12 +88,13 @@ function GameState:_playRound()
 
 	local startTime = os.clock()
 	self._roundEnded = false
+	self.forceOvertimeRequested = false
 	local overtimeStarted = false
 	local overtimeDeadline
 
 	while not self._roundEnded do
 		task.wait(1)
-		if not overtimeStarted and os.clock() - startTime > Config.Round.MaxRoundTime then
+		if not overtimeStarted and (self.forceOvertimeRequested or os.clock() - startTime > Config.Round.MaxRoundTime) then
 			overtimeStarted = true
 			overtimeDeadline = os.clock() + Config.Round.OvertimeDuration
 			self:_startOvertime()
@@ -126,6 +127,15 @@ end
 function GameState:_resetOvertimeVisuals()
 	Lighting.FogEnd = Config.Lighting.FogEnd
 	Lighting.Brightness = Config.Lighting.Brightness
+end
+
+-- Debug hook (see Main.server.lua's /godmode chat command): skips straight
+-- to Overtime on the next second-tick instead of waiting for
+-- Config.Round.MaxRoundTime. No-ops outside an active round.
+function GameState:RequestOvertime()
+	if self.phase == "Playing" then
+		self.forceOvertimeRequested = true
+	end
 end
 
 function GameState:_checkRoundEnd()

@@ -10,14 +10,27 @@
 local Config = {}
 
 Config.Maze = {
-	CellSize = 22, -- bigger rooms: more sense of scale, fewer junctions per traveled distance
+	CellSize = 22, -- base cell unit; a room is MinRoomSize-MaxRoomSize of these per side
 	GridWidth = 22, -- doubled side length (4x area) to spread 8 monsters across more space
 	GridHeight = 22,
 	WallHeight = 12,
 	WallThickness = 1,
-	LoopChance = 0.07, -- fewer shortcuts visible/available at any junction -- more backrooms, less web-of-shortcuts
-	MainCorridorEvery = 3, -- every Nth row/column is a wide "main aisle" Thomas can use
-	DoorwayWidth = 6, -- non-boulevard passages are this wide instead of the full room edge
+	MinRoomSize = 3, -- rooms are 3-5 base cells per side (66-110 studs) -- big open spaces, not a mini-maze
+	MaxRoomSize = 5,
+	LoopChance = 0.15, -- chance an extra room-to-room connection is added beyond the minimum spanning layout
+	HallwayChance = 0.25, -- of any room-to-room connection, the odds it's a wide open gap instead of a narrow doorway
+	DoorwayWidth = 6, -- narrow connections are this wide instead of the full room edge
+	ZoneAccentChance = 0.15, -- chance a wall/shelf ignores its zone color and picks any palette color instead
+	-- The grid is split into four roughly-quadrant color "wings" so wall
+	-- color reads as "you're in a different part of the store" instead of
+	-- random noise. ZoneAccentChance above keeps it from being forced
+	-- monotone within a wing.
+	ColorZones = {
+		{ name = "Blue Wing", primary = Color3.fromRGB(0, 81, 186) },
+		{ name = "Yellow Wing", primary = Color3.fromRGB(255, 218, 26) },
+		{ name = "White Wing", primary = Color3.fromRGB(232, 226, 212) },
+		{ name = "Wood Wing", primary = Color3.fromRGB(150, 116, 78) },
+	},
 }
 
 Config.Lighting = {
@@ -96,6 +109,10 @@ Config.Overtime = {
 --   idleSoundId        one-shot 3D sound played occasionally during Patrol
 --                       (doubles as Dora's "callout" voice line -- see MonsterAI.lua)
 --   idleSoundInterval  {min, max} seconds between idle sound rolls
+--   pathAgentRadius    PathfindingService AgentRadius (default ~2 if unset)
+--                       -- a bigger value makes narrow doorways impassable
+--                       to that monster's pathfinding, forcing it through
+--                       hallway-width gaps and open rooms only (Thomas).
 Config.Monsters = {
 	{
 		id = "George",
@@ -161,7 +178,8 @@ Config.Monsters = {
 		hearingRadius = 26,
 		loseSightTime = 5,
 		repathInterval = 0.5,
-		quirk = "railOnly",
+		quirk = "wideBody", -- too wide for narrow doorways -- can only cross rooms via hallway-style gaps
+		pathAgentRadius = 3.5, -- vs. the ~2 everyone else uses; this alone makes narrow doorways impassable to his pathfinding
 		jumpscareColor = Color3.fromRGB(20, 90, 160),
 		flavor = "A really useful engine. Useful for absolutely flattening you.",
 		footstepSoundId = "rbxasset://sounds/action_footsteps_plastic.mp3",

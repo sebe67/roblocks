@@ -7,11 +7,11 @@ local MonsterSpawner = {}
 -- Spawns one of every monster in Config.Monsters, places them away from the
 -- entrance, and starts a single shared Heartbeat loop driving all of them
 -- (cheaper than one task.spawn loop per monster).
-function MonsterSpawner.SpawnAll(maze, waypointGraph)
+function MonsterSpawner.SpawnAll(maze)
 	local monsters = {}
 
 	for _, def in ipairs(Config.Monsters) do
-		local monster = MonsterAI.new(def, maze, waypointGraph)
+		local monster = MonsterAI.new(def, maze)
 
 		local spawnPos
 		for _ = 1, 12 do

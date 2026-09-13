@@ -39,15 +39,22 @@ or bake ahead of time.
 
 ## What's actually implemented
 
-- **Procedural store/maze** (`MazeGenerator.lua`): a recursive-backtracker
-  maze with extra knocked-down walls for shortcuts, IKEA-blue/yellow shelf
-  units with random fake-Swedish aisle signage (`GRÖNKVIST`, `MÖRKHUS`, ...),
-  a lobby/entrance, a locked "loading dock" exit, and six minigame rooms.
-  A lattice of wide, fully-open "rail" rows/columns cuts through it as main
-  walkways (see Thomas, below); every other passage between rooms is a
-  narrow doorway (`Config.Maze.DoorwayWidth`) rather than the whole room
-  edge, so you can't see clear across into three other rooms at once. 22x22
-  cells at 22 studs each — big enough to spread 8 monsters out.
+- **Procedural store** (`MazeGenerator.lua`): not a uniform small-cell maze
+  but a series of big rectangular rooms (`Config.Maze.MinRoomSize`-
+  `MaxRoomSize`, 3-5 base cells per side — 66-110 studs) greedily tiled
+  across a 22x22 grid, each room a single open floor plan inside. A
+  recursive-backtracker spanning walk over the *rooms* (not fine cells)
+  picks one connector per adjacent room pair — most are a narrow doorway
+  (`Config.Maze.DoorwayWidth`), some (`HallwayChance`) are a wider open
+  gap — plus a few extra shortcut connections (`LoopChance`). No boulevards
+  or forced-open main aisles anymore; every non-open-floor passage is an
+  actual doorway you have to find. The whole grid is split into four
+  roughly-quadrant color "wings" (`Config.Maze.ColorZones`) so wall color
+  reads as a sense of place instead of random noise, with an occasional
+  off-palette wall/shelf (`ZoneAccentChance`) so it's not forced monotone.
+  Plus IKEA-blue/yellow shelf units, fake-Swedish aisle signage
+  (`GRÖNKVIST`, `MÖRKHUS`, ...), a lobby/entrance, a locked "loading dock"
+  exit, and six minigame rooms.
 - **Lighting** (`StoreTheme.lua`): dim ambient + fog + a subtle atmosphere,
   with only roughly 1-in-3 ceiling fixtures actually lit, plus some dead
   fixtures that flicker briefly at random. Dim, not pitch black.
@@ -81,19 +88,21 @@ or bake ahead of time.
 |---|---|---|
 | Curious George | fast, erratic | randomly juks direction mid-chase |
 | Peppa Pig | medium | short speed bursts ("snort") while chasing |
-| Thomas the Tank Engine | slow patrol, very fast chase | **physically restricted to the wide main aisles** — duck into a narrow shelf row and he can't follow |
+| Thomas the Tank Engine | slow patrol, very fast chase | **too wide for narrow doorways** — can only cross between rooms via the wider hallway-style gaps |
 | Barney | slow, huge | loud footsteps (bigger hearing radius) — telegraphed |
-| The Grinch | fast | faster and sees further in unlit (non-main-aisle) cells |
+| The Grinch | fast | faster and sees further in cells whose ceiling fixture is actually dead |
 | Kung Fu Panda | medium | occasional straight-line dash burst |
 | SpongeBob | medium | giggles while patrolling — a red herring cue |
 | Dora | medium | **spotting you alerts every other monster to your last position** |
 
-Thomas's "rail only" restriction isn't cosmetic: he pathfinds on a
-completely separate graph (`WaypointGraph.lua`) built only from the maze's
-main-aisle cells, rather than Roblox's navmesh `PathfindingService` that
-every other monster uses. That's the one genuinely different piece of AI in
-the roster — it's what makes ducking into a side aisle a real, learnable
-counter-play against him specifically.
+Thomas's restriction isn't a special-cased graph anymore — it falls out
+naturally from giving him a much larger `pathAgentRadius` in
+`MonsterAI.lua`'s PathfindingService calls than every other monster. A
+bigger agent radius makes Roblox's navmesh solver treat narrow doorways as
+too tight to fit through, so he's automatically routed only through wide
+hallway gaps and open rooms, with zero bespoke pathing code. Simpler than
+the old rail-graph approach and ties his restriction directly to the new
+room/doorway structure instead of an arbitrary lattice.
 
 You asked for more roster ideas: **Bluey, the Teletubbies (Tinky Winky),
 Cocomelon's JJ, and SpongeBob/Dora's Nickelodeon stablemate Baby Shark**
@@ -135,6 +144,12 @@ clicking Respawn into it. Dying (even during Overtime) never force-ends the
 round on its own — Respawn/Spectate always stays live for anyone who hasn't
 resolved their choice yet; the round only ends early once everyone has
 actually escaped or given up.
+
+**Testing it without waiting 10 minutes:** type `/godmode` in chat during an
+active round to skip straight to Overtime. It's wired up in
+`Main.server.lua` (`Player.Chatted` → `GameState:RequestOvertime()`) and
+currently open to any player — fine for testing, but gate it (e.g. to
+specific `UserId`s) before this ever goes public.
 
 Adding a fourth station is: build its client module under
 `StarterPlayerScripts/Minigames/`, register it in
@@ -209,11 +224,10 @@ src/ReplicatedStorage/Shared/
   Net.lua                            Lazy RemoteEvent/RemoteFunction lookup helper
   SoundKit.lua                       Play2D/loop3D/playAt sound helpers (safe no-op on empty SoundId)
 src/ServerScriptService/
-  Main.server.lua                    Boots everything, wires services together
-  MazeGenerator.lua                  Builds the store geometry + signage + stations + exit
+  Main.server.lua                    Boots everything, wires services together, /godmode chat command
+  MazeGenerator.lua                  Room partitioning + doorway/hallway connectors + color zones + stations + exit
   StoreTheme.lua                     Lighting/atmosphere + dead-fixture flicker loop
-  WaypointGraph.lua                  Thomas's restricted rail-only pathing graph
-  MonsterAI.lua                      Per-monster state machine + placeholder rig + monster audio
+  MonsterAI.lua                      Per-monster state machine + Overtime godmode + placeholder rig + monster audio
   MonsterSpawner.lua                 Spawns one of every Config.Monsters entry
   MinigameService.lua                Station wiring, noise pulses, exit-unlock trigger
   ExitService.lua                    Exit door lock/unlock + escape-zone detection
