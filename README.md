@@ -97,37 +97,32 @@ in Workspace. A totally blank new place works fine.
   directly saw a player (distance + field-of-view cone + an unobstructed
   raycast) — it never teleports knowledge of your position into itself.
   "Investigate" (from noise or Dora's callout) only ever sends it toward a
-  *location*. Chasing walks straight at your live position when the route is
-  genuinely clear, falling back to `PathfindingService` only when a wall
-  blocks it — "clear" is checked with a spherecast sized to the monster's
-  own `pathAgentRadius`, not a zero-width ray, so a corner/doorway jamb the
-  monster's actual body wouldn't fit through is correctly treated as
-  blocked instead of scraping it (which was the source of the sideways
-  zig-zag and slower-than-expected closing speed reported even chasing a
-  stationary target). Decorative parts (shelves, etc.) are also flagged
-  `CanQuery = false` so they no longer spuriously block that same sight/path
-  raycast despite never physically colliding with anything. That spherecast
-  itself was also occasionally clipping the *floor* on a perfectly flat,
-  unobstructed line to a stationary player — its radius gives it real
-  vertical extent, and at a monster's root height that was enough to dip
-  below the floor's surface — so Floors/Ceiling are now excluded from the
-  raycast filter entirely; neither is ever a real obstacle to walk through.
+  *location*. Chasing steers straight at your live position every frame with
+  `Humanoid:Move()` — a continuous "here's the desired direction this
+  frame" input, the same API a player's own WASD ultimately drives — via
+  `_chaseDirectly` in `MonsterAI.lua`.
+
+  **Chase obstacle-avoidance is temporarily disabled.** Earlier versions
+  branched every single frame between this direct steering and a
+  `PathfindingService` fallback (via `Humanoid:MoveTo()`) depending on
+  whether a wall blocked the straight line, but the reported "wildly
+  left-right, sometimes backwards, overshooting past the player" chase
+  behavior persisted even after several rounds of tuning that fallback
+  condition (a spherecast for body width, excluding Floors/Ceiling from it,
+  etc.) — strong evidence the two movement APIs were fighting each other
+  frame-to-frame (`MoveTo` resets the humanoid's internal walk/turn state
+  on every call, which up close to a moving target can itself look like
+  flailing) rather than the fallback's *condition* being miscalibrated. So
+  for now, every monster except Thomas (who structurally can't fit through
+  doorways and so always needs actual pathfinding) ignores walls entirely
+  during Chase and just beelines for the player — confirming the core
+  steering is smooth on its own before layering obstacle-awareness back in
+  with a steering method that doesn't swap APIs mid-chase. Patrol/
+  Investigate/Search are unaffected and still path around walls normally.
   Monsters are scattered at least `Config.Maze.MonsterSpawnExclusionCells`
   cells from the (now-central) spawn point both at server boot and again at
   the start of every round (`MonsterSpawner.RepositionAll`), so one can't
-  end up camping the entrance between rounds. The direct-chase case (both
-  normal chase and Overtime) now steers with `Humanoid:Move()` — a
-  continuous "here's the desired direction this frame" input, the same API
-  a player's own WASD ultimately drives — instead of calling
-  `Humanoid:MoveTo()` every frame toward the player's constantly-updating
-  position. `MoveTo` is meant for a one-shot "walk to this waypoint"
-  command; calling it repeatedly toward a moving target resets the
-  humanoid's internal walk/turn state on every call, and up close the
-  target's angle relative to the monster swings far enough, often enough,
-  that those resets *were* the visible flailing — wide S-turns, brief
-  backward lurches, overshooting past the player. `Move()` has none of
-  that, so the chase now reads as a smooth, direct pursuit no matter how
-  close the player is (`_chaseDirectly` in `MonsterAI.lua`).
+  end up camping the entrance between rounds.
 - **Sprinting**: hold Shift, infinite, no stamina bar (`SprintController.lua`).
 - **View bob** (`ViewBobController.lua`): a subtle first-person camera bob
   while moving, scaled up a bit while sprinting — cycles per stud traveled

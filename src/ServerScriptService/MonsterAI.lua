@@ -516,9 +516,10 @@ function MonsterAI:_applyQuirkSpeed(baseSpeed)
 	return baseSpeed
 end
 
--- Continuous steering toward a live (possibly moving) target position, used
--- whenever the direct line to it is clear. Uses Humanoid:Move (a per-frame
--- desired direction, exactly like a player's own WASD input) rather than
+-- Continuous steering toward a live (possibly moving) target position --
+-- straight-line only, no obstacle awareness (see Update()'s comment on
+-- why that's disabled for now). Uses Humanoid:Move (a per-frame desired
+-- direction, exactly like a player's own WASD input) rather than
 -- Humanoid:MoveTo (a one-shot "walk to this waypoint and stop" command).
 -- MoveTo is the wrong tool here: calling it every frame toward a
 -- continuously-moving player resets the humanoid's internal walk/turn state
@@ -579,16 +580,19 @@ function MonsterAI:_updateGodChase(now)
 	self.humanoid.WalkSpeed = def.chaseSpeed * Config.Round.OvertimeSpeedMultiplier
 	self:_updateFootstepAudio()
 
-	if def.quirk ~= "wideBody" and self:_hasClearPath(nearestRoot.Position) then
-		self.currentPath = nil
-		self:_chaseDirectly(nearestRoot.Position)
-	else
+	-- Same temporary simplification as the normal chase case below: always
+	-- direct-steer except for Thomas, no per-frame branching on
+	-- _hasClearPath. See the long comment in Update() for why.
+	if def.quirk == "wideBody" then
 		local pathExhausted = not self.currentPath or not self.currentPath[self.pathIndex]
 		if pathExhausted or now - self.lastPathTime > Config.Round.OvertimeRepathInterval then
 			self.lastPathTime = now
 			self:_moveAlongPath(self:_pathTo(nearestRoot.Position) or {})
 		end
 		self:_followCurrentPath(0)
+	else
+		self.currentPath = nil
+		self:_chaseDirectly(nearestRoot.Position)
 	end
 end
 
@@ -645,15 +649,24 @@ function MonsterAI:Update(dt)
 
 			self.humanoid.WalkSpeed = self:_applyQuirkSpeed(def.chaseSpeed)
 
-			-- Straight line available (and not rail-restricted): just walk
-			-- directly at the player's live position. No waypoints, no
-			-- PathfindingService, nothing to flip-flop between -- this is
-			-- deliberately the simple case. Only fall back to pathfinding
-			-- when a wall is actually blocking that direct route.
-			if def.quirk ~= "wideBody" and self:_hasClearPath(root.Position) then
-				self.currentPath = nil
-				self:_chaseDirectly(root.Position)
-			else
+			-- TEMPORARY simplification, at your request: always steer
+			-- straight at the player's live position with Humanoid:Move(),
+			-- full stop -- no PathfindingService fallback for anyone except
+			-- Thomas (whose whole quirk is that he structurally can't fit
+			-- through doorways, so he always needed pathfinding regardless).
+			-- The previous version branched every single frame between this
+			-- direct Move() and a pathfinding/MoveTo() fallback based on
+			-- _hasClearPath -- if that raycast flickered true/false between
+			-- consecutive frames (very plausible near a doorway/corner, or
+			-- just from float-precision noise), the monster would alternate
+			-- between two APIs that manipulate the humanoid's walk state
+			-- differently, which reads exactly like the reported
+			-- left-right/backwards flailing. Removing the branch entirely
+			-- removes that possibility outright, so this doubles as the
+			-- test of whether that was the actual cause. Bringing
+			-- obstacle-awareness back (once this is confirmed smooth) needs
+			-- a steering method that doesn't flip APIs frame to frame.
+			if def.quirk == "wideBody" then
 				local pathExhausted = not self.currentPath or not self.currentPath[self.pathIndex]
 				if pathExhausted then
 					-- No path in flight at all right now -- e.g. we just lost
@@ -680,6 +693,9 @@ function MonsterAI:Update(dt)
 					end
 				end
 				self:_followCurrentPath(dt)
+			else
+				self.currentPath = nil
+				self:_chaseDirectly(root.Position)
 			end
 			return
 		end
