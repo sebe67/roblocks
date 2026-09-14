@@ -164,13 +164,22 @@ in Workspace. A totally blank new place works fine.
     at the player's exact center) tried to walk into someone it had
     already reached — sliding it around the player's collision shape
     instead of ever registering contact, which is what an "orbits before
-    finally touching" report looks like from outside. The catch is purely
-    a `Touched`-event trigger, never a physical block, so this collision
-    never served a purpose; monsters and players are now in separate
-    `PhysicsService` collision groups, non-collidable with each other but
-    both still collide normally with walls/floor (`Main.server.lua`).
-    `Touched` still fires the same either way — it depends on `CanTouch`,
-    not `CanCollide`.
+    finally touching" report looks like from outside. Only Monster-vs-
+    Player collision was disabled at first; **Monster-vs-Monster collision
+    was the same bug from a second angle**, and with Chase now a pure,
+    obstacle-blind beeline (no `PathfindingService` fallback to route
+    around anything), a monster whose straight line to the player happens
+    to pass through *another monster's* solid body gets physically shoved
+    off-course by it, over and over — exactly the zig-zag/orbit still
+    reported for some monsters and not others despite every one of them
+    running identical chase code, since it comes down to whether another
+    monster happened to be in the way during that specific encounter. The
+    catch is purely a `Touched`-event trigger, never a physical block, so
+    none of this collision ever served a purpose; monsters and players,
+    and monsters and each other, are now in separate/non-collidable
+    `PhysicsService` collision groups, all still colliding normally with
+    walls/floor (`Main.server.lua`). `Touched` still fires the same either
+    way — it depends on `CanTouch`, not `CanCollide`.
   - `_canSee`'s facing-cone (FOV) check could fail while a monster was
     actively chasing just because its own facing lagged its movement
     direction by a few degrees — steering noise, not the player leaving —

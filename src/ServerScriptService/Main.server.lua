@@ -5,23 +5,31 @@
 local Players = game:GetService("Players")
 local PhysicsService = game:GetService("PhysicsService")
 
--- Monsters and players physically colliding was never needed -- the catch
--- is a Touched-event trigger (MonsterAI:_onTouch), not a physical block --
--- and letting Roblox's rigid-body physics resolve the overlap between two
--- CanCollide parts every frame a monster tries to walk into a player was
--- exactly the "orbits around you before finally touching" bug: each
--- frame's push-apart-and-reaim-at-center cycle can slide the monster
--- sideways around the player's collision shape instead of ever
--- registering contact. Touched still fires between non-colliding parts
--- (it depends on CanTouch, not CanCollide), so disabling collision between
--- these two groups only removes the physical shove -- catching still works
--- exactly the same. Both groups still collide normally with Default (walls,
--- floor, everything else), and registering an already-registered group is
--- a harmless no-op.
+-- Monsters physically colliding with players -- OR with each other -- was
+-- never needed: the catch is a Touched-event trigger (MonsterAI:_onTouch),
+-- not a physical block, and letting Roblox's rigid-body physics resolve
+-- the overlap between two CanCollide parts every frame something tries to
+-- walk into something it's already reached is exactly the "orbits before
+-- finally touching" bug: each frame's push-apart-and-reaim-at-center cycle
+-- can slide the mover sideways around the other's collision shape instead
+-- of ever registering contact. With Chase now a pure, obstacle-blind
+-- beeline at the player (no PathfindingService fallback), a chasing
+-- monster whose straight line happens to pass through ANOTHER monster's
+-- body has nothing to route around it with -- it just gets physically
+-- shoved off-course by that monster over and over, which reads as
+-- zig-zagging/orbiting and explains why this showed up for some
+-- encounters (another monster happened to be in the way) and not others,
+-- with all of them running identical chase code. Touched still fires
+-- between non-colliding parts (it depends on CanTouch, not CanCollide), so
+-- disabling collision between these groups only removes the physical
+-- shove -- catching still works exactly the same. All three groups still
+-- collide normally with Default (walls, floor, everything else), and
+-- registering an already-registered group is a harmless no-op.
 pcall(function()
 	PhysicsService:RegisterCollisionGroup("Monsters")
 	PhysicsService:RegisterCollisionGroup("Players")
 	PhysicsService:CollisionGroupSetCollidable("Monsters", "Players", false)
+	PhysicsService:CollisionGroupSetCollidable("Monsters", "Monsters", false)
 end)
 
 local MazeGenerator = require(script.Parent.MazeGenerator)
