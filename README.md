@@ -126,6 +126,19 @@ in Workspace. A totally blank new place works fine.
   him, same as before — he just steers toward his waypoints via `Move()`
   now too, like everything else.
 
+  One more chase-specific wrinkle: whether the direct line is clear is a
+  single raycast/spherecast reading (`_hasClearPath`) taken fresh every
+  frame, and right next to a corner or doorway jamb that reading can
+  flicker to "blocked" for a single frame from ordinary geometry noise.
+  Reacting to that instantly used to mean requesting a brand new
+  `PathfindingService` route and steering at *its* first waypoint that same
+  frame — a real, brief detour off the player's actual position, visible as
+  the monster veering to the side mid-chase. `BLOCKED_DEBOUNCE` (0.15s)
+  fixes this: the blocked reading has to hold for that long before chase
+  actually reroutes, so a one-frame flicker gets ignored and direct-chase
+  just continues, while a genuine wall (which stays blocked well past that
+  window) still reroutes quickly.
+
   Debugging this also turned up that the flailing was reported worse for
   SpongeBob than other monsters despite all of them sharing this exact
   movement code — the one per-frame difference was his `lightsOut` quirk

@@ -21,6 +21,12 @@ local registry = {}
 local catchHandler = nil
 local overtimeActive = false
 
+-- How long _hasClearPath must read "blocked" in a row before chase actually
+-- reroutes through PathfindingService, instead of a single frame's reading
+-- (which can flicker false right next to a corner/doorway from ordinary
+-- geometry noise) triggering an immediate, visible detour off the player.
+local BLOCKED_DEBOUNCE = 0.15
+
 function MonsterAI.SetCatchHandler(fn)
 	catchHandler = fn
 end
@@ -609,10 +615,18 @@ function MonsterAI:_updateGodChase(now)
 	self:_updateFootstepAudio()
 
 	-- Same unified-API approach as the normal chase case in Update(): only
-	-- Humanoid:Move() ever runs during chase, whether aiming at the player
-	-- directly or at a pathfinding waypoint, so there's no MoveTo()/Move()
-	-- alternation possible even if _hasClearPath flickers frame to frame.
-	if def.quirk == "wideBody" or not self:_hasClearPath(nearestRoot.Position) then
+	-- Humanoid:Move() ever runs during chase. Same debounce too -- see the
+	-- comment in Update() -- so a single flickered "blocked" reading can't
+	-- yank a godmode monster off toward a waypoint instead of the player.
+	local clearNow = self:_hasClearPath(nearestRoot.Position)
+	if clearNow then
+		self.blockedSince = nil
+	else
+		self.blockedSince = self.blockedSince or now
+	end
+	local reallyBlocked = self.blockedSince and (now - self.blockedSince > BLOCKED_DEBOUNCE)
+
+	if def.quirk == "wideBody" or reallyBlocked then
 		local pathExhausted = not self.currentPath or not self.currentPath[self.pathIndex]
 		if pathExhausted or now - self.lastPathTime > Config.Round.OvertimeRepathInterval then
 			self.lastPathTime = now
@@ -675,12 +689,28 @@ function MonsterAI:Update(dt)
 
 			self.humanoid.WalkSpeed = self:_applyQuirkSpeed(def.chaseSpeed)
 
-			-- Falls back to a PathfindingService route when a wall blocks
-			-- the direct line to the player (or always, for Thomas). Both
-			-- branches steer via _followCurrentPath/_steerToward, i.e. only
-			-- ever Humanoid:Move() -- see _steerToward's comment for why
-			-- that matters.
-			if def.quirk == "wideBody" or not self:_hasClearPath(root.Position) then
+			-- _hasClearPath is a single raycast/spherecast reading, and a
+			-- single frame's reading isn't trustworthy enough to act on
+			-- immediately: right next to a corner or doorway jamb it can
+			-- flip to "blocked" for just one frame from ordinary geometry
+			-- noise. Reacting to that instantly used to mean requesting a
+			-- brand new PathfindingService route and steering at ITS first
+			-- waypoint that same frame -- a real, if brief, detour off the
+			-- player's actual position, which reads exactly as "veers off
+			-- to the side" mid-chase. Requiring the blocked reading to hold
+			-- for BLOCKED_DEBOUNCE seconds before actually rerouting means
+			-- a one-frame flicker gets ignored and direct-chase just
+			-- continues; a genuine wall stays blocked well past that
+			-- window, so real obstacles still reroute quickly.
+			local clearNow = self:_hasClearPath(root.Position)
+			if clearNow then
+				self.blockedSince = nil
+			else
+				self.blockedSince = self.blockedSince or now
+			end
+			local reallyBlocked = self.blockedSince and (now - self.blockedSince > BLOCKED_DEBOUNCE)
+
+			if def.quirk == "wideBody" or reallyBlocked then
 				local pathExhausted = not self.currentPath or not self.currentPath[self.pathIndex]
 				if pathExhausted then
 					-- No path in flight at all right now -- e.g. we just lost
