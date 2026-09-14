@@ -101,7 +101,7 @@ Config.Player = {
 -- character, toggled server-side, so everyone sees everyone else's beam --
 -- not just a client-only visual effect for its owner.
 Config.Flashlight = {
-	Range = 26,
+	Range = 45, -- how far forward the beam reaches; brightness/angle otherwise unchanged
 	Angle = 40, -- full cone angle in degrees (SpotLight.Angle), not a half-angle
 	Brightness = 3,
 	Color = Color3.fromRGB(255, 250, 220),

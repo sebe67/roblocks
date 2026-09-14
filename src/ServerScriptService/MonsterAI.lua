@@ -1,10 +1,11 @@
--- Per-monster state machine: Patrol -> (sight) -> Chase, with an
--- Investigate state fed by noise pulses (minigames) and Dora's "callout"
--- quirk, and a brief Search state when a chase target breaks line of sight.
---
--- Monsters ONLY ever enter Chase because they directly saw a player
--- (unobstructed raycast + FOV cone + range). Investigate only ever walks
--- them toward a *location*, never straight at a player through walls.
+-- Per-monster state machine: exactly two states, Patrol and Chase, that
+-- can't interfere with each other. Chase is entered ONLY by directly seeing
+-- a player (unobstructed raycast + FOV cone + range) and exited ONLY by
+-- CHASE_GIVEUP_TIME passing with no sight of that player -- see Update().
+-- A noise alert (minigame stations, Dora's "callout" quirk) never starts a
+-- real Chase; it just gives Patrol a specific destination to head toward
+-- for a while instead of a random one (ReceiveAlert), so it's a variant of
+-- Patrol rather than a third state.
 
 local PathfindingService = game:GetService("PathfindingService")
 local Players = game:GetService("Players")
@@ -20,12 +21,6 @@ MonsterAI.__index = MonsterAI
 local registry = {}
 local catchHandler = nil
 local overtimeActive = false
-
--- How long _hasClearPath must read "blocked" in a row before chase actually
--- reroutes through PathfindingService, instead of a single frame's reading
--- (which can flicker false right next to a corner/doorway from ordinary
--- geometry noise) triggering an immediate, visible detour off the player.
-local BLOCKED_DEBOUNCE = 0.15
 
 function MonsterAI.SetCatchHandler(fn)
 	catchHandler = fn
@@ -165,10 +160,8 @@ function MonsterAI.new(def, maze)
 	self.maze = maze
 	self.state = "Patrol"
 	self.target = nil
-	self.lastKnownPos = nil
 	self.investigatePos = nil
 	self.lastSightTime = 0
-	self.lastPathTime = 0
 	self.paused = true
 	self.destroyed = false
 	self.catchCooldown = {}
@@ -176,17 +169,9 @@ function MonsterAI.new(def, maze)
 	self.model, self.humanoid, self.root = createRig(def)
 	self.model.Parent = workspace
 
-	-- Floors/Ceiling should never occlude a sight or movement-clearance
-	-- check -- monsters and players both stand on the floor and walk under
-	-- the ceiling, so those are never real obstacles between them.
-	-- _hasClearPath's spherecast in particular has real vertical extent
-	-- (its radius), and at a monster's actual root height that sphere can
-	-- dip low enough to clip the floor even on a perfectly horizontal cast
-	-- straight at a stationary player standing in an otherwise empty room --
-	-- reading as "blocked" and forcing an unnecessary PathfindingService
-	-- detour instead of a direct sprint. Excluding both folders up front
-	-- (rather than trying to tune the radius) removes that false positive
-	-- entirely regardless of height/radius.
+	-- Floors/Ceiling should never occlude a sight check (_canSee) -- monsters
+	-- and players both stand on the floor and walk under the ceiling, so
+	-- those are never real obstacles between them.
 	self.raycastExclude = { self.model }
 	local floorsFolder = maze.model:FindFirstChild("Floors")
 	local ceilingFolder = maze.model:FindFirstChild("Ceiling")
@@ -291,12 +276,7 @@ function MonsterAI:_canSee(targetRoot)
 	-- Within melee range, skip the facing-cone check entirely -- a monster
 	-- that's basically on top of someone shouldn't lose track of them
 	-- purely because its facing lags its own movement direction by a few
-	-- degrees (steering, not intent). Losing sight this way while still
-	-- chasing at close quarters was dropping Chase into the Search state,
-	-- which paths to lastKnownPos via PathfindingService -- a computed
-	-- route that can visibly loop before the final approach even though
-	-- the target never moved, which is what an "orbits before touching"
-	-- report at close-to-moderate range looks like from the outside.
+	-- degrees (steering, not intent).
 	if dist > Config.MeleeAwareRadius then
 		local dir = toTarget.Unit
 		local look = self.root.CFrame.LookVector
@@ -314,52 +294,6 @@ function MonsterAI:_canSee(targetRoot)
 		return false
 	end
 	return true
-end
-
--- An unobstructed-line-of-travel check (as opposed to _canSee, which also
--- checks FOV/range for spotting). Used so chasing can just walk straight at
--- a player when nothing's in the way, only falling back to PathfindingService
--- when a wall is actually blocking the direct route.
---
--- Uses a spherecast sized to the same AgentRadius PathfindingService plans
--- clearance around (def.pathAgentRadius, same default of 2 as _pathTo), not
--- a zero-width raycast. A thin centerline ray can read "clear" for a line
--- that grazes a wall corner or doorway jamb close enough that the monster's
--- actual body still clips it -- the collision response to that scrape (a
--- shove sideways, a moment of stuck friction) is exactly the zig-zag and
--- slower-than-expected chase reported even against a fully stationary
--- player. Matching the radius to what pathfinding already treats as "fits"
--- keeps the two systems in agreement: if this says clear, the body actually
--- fits, full stop.
--- targetCharacter (optional): the model the spherecast is aiming at, so its
--- own body doesn't count as "blocking" the path to itself. Without this, a
--- hit on the target's own shoulder/arm/head -- easily >2 studs from their
--- root position, well within reach of a radius-2 spherecast -- read as a
--- real obstacle purely because of their own geometry, with zero walls
--- involved: exactly the "still veers with nothing in the way" and
--- intermittent erratic-switching reported, since which part of their body
--- (if any) gets clipped shifts constantly with approach angle. _canSee
--- already handled this correctly (see its IsDescendantOf check above) --
--- this brings _hasClearPath in line with it instead of guessing a distance
--- threshold.
-function MonsterAI:_hasClearPath(targetPos, targetCharacter)
-	local origin = self.root.Position
-	local direction = targetPos - origin
-	if direction.Magnitude < 1 then
-		return true
-	end
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = self.raycastExclude
-	local radius = self.def.pathAgentRadius or 2
-	local result = workspace:Spherecast(origin, radius, direction, params)
-	if not result then
-		return true
-	end
-	if targetCharacter and result.Instance:IsDescendantOf(targetCharacter) then
-		return true
-	end
-	return false
 end
 
 function MonsterAI:_inDarkCell()
@@ -458,12 +392,19 @@ function MonsterAI:_scanForTargets()
 	return best
 end
 
+-- Noise (a minigame station running, Dora's callout) never starts a real
+-- Chase by itself -- only directly seeing a player does that (see the file
+-- header). It just gives Patrol a specific destination to walk to instead
+-- of a random one for a while, rather than being its own state: with only
+-- Patrol and Chase existing, there's nothing else for a state machine
+-- transition to conflict with.
 function MonsterAI:ReceiveAlert(position)
 	if self.state == "Chase" then
 		return
 	end
-	self.state = "Investigate"
 	self.investigatePos = position
+	self.investigateUntil = os.clock() + 6
+	self.currentPath = nil
 end
 
 function MonsterAI.BroadcastNoise(position, radius)
@@ -490,7 +431,15 @@ local function computeNavmeshPath(fromPos, toPos, agentRadius, agentScale)
 		AgentRadius = agentRadius,
 		AgentHeight = 5 * agentScale,
 		AgentCanJump = false,
-		WaypointSpacing = 4,
+		-- WaypointSpacing is the MAX gap between waypoints, not a target --
+		-- at 4 it was forcing extra waypoints along dead-straight stretches
+		-- through these big rooms (up to 110 studs across), each one a tiny
+		-- excuse to nudge direction, which is what patrol read as erratic
+		-- even with nothing chasing it. Widening it lets a straight room
+		-- interior collapse to a couple of waypoints; real turns (doorways,
+		-- corners) still force one because the underlying route actually
+		-- bends there, so direction changes now line up with intersections.
+		WaypointSpacing = 16,
 	})
 	local ok = pcall(function()
 		path:ComputeAsync(fromPos, toPos)
@@ -609,8 +558,6 @@ function MonsterAI:_updateFootstepAudio()
 	local pitchMultiplier, volume = 1, 0.35
 	if self.state == "Chase" then
 		pitchMultiplier, volume = 1.3, 0.75
-	elseif self.state == "Investigate" or self.state == "Search" then
-		pitchMultiplier, volume = 1.1, 0.5
 	end
 	sound.PlaybackSpeed = (self.def.footstepPitch or 1) * pitchMultiplier
 	sound.Volume = volume
@@ -621,11 +568,10 @@ end
 
 -- Overtime: no sight/range checks, just always know exactly where the
 -- nearest alive player is and beeline for them at a much higher speed.
--- Still respects Thomas's wide-body restriction (see def.quirk == "wideBody"
--- below) and still falls back to PathfindingService (much more frequently)
--- when a wall blocks the direct line -- "godlevel pathfinding," not "walks
--- through walls."
-function MonsterAI:_updateGodChase(now)
+-- Same simple, unconditional direct steering as the normal Chase case
+-- below -- no obstacle awareness, no exception for Thomas either, per your
+-- call to isolate the steering itself for now.
+function MonsterAI:_updateGodChase()
 	local def = self.def
 	local nearestPlayer, nearestRoot, nearestDist
 	for _, entry in ipairs(playersToCheck()) do
@@ -643,31 +589,25 @@ function MonsterAI:_updateGodChase(now)
 	self.target = nearestPlayer.Character
 	self.humanoid.WalkSpeed = def.chaseSpeed * Config.Round.OvertimeSpeedMultiplier
 	self:_updateFootstepAudio()
-
-	-- Same unified-API approach as the normal chase case in Update(): only
-	-- Humanoid:Move() ever runs during chase. Same debounce too -- see the
-	-- comment in Update() -- so a single flickered "blocked" reading can't
-	-- yank a godmode monster off toward a waypoint instead of the player.
-	local clearNow = self:_hasClearPath(nearestRoot.Position, nearestPlayer.Character)
-	if clearNow then
-		self.blockedSince = nil
-	else
-		self.blockedSince = self.blockedSince or now
-	end
-	local reallyBlocked = self.blockedSince and (now - self.blockedSince > BLOCKED_DEBOUNCE)
-
-	if def.quirk == "wideBody" or reallyBlocked then
-		local pathExhausted = not self.currentPath or not self.currentPath[self.pathIndex]
-		if pathExhausted or now - self.lastPathTime > Config.Round.OvertimeRepathInterval then
-			self.lastPathTime = now
-			self:_moveAlongPath(self:_pathTo(nearestRoot.Position) or {})
-		end
-		self:_followCurrentPath()
-	else
-		self.currentPath = nil
-		self:_steerToward(nearestRoot.Position)
-	end
+	self.currentPath = nil
+	self:_steerToward(nearestRoot.Position)
 end
+
+-- Exactly two states, Patrol and Chase, and they can't interfere with each
+-- other: Chase is entered ONLY by directly seeing a player (never by
+-- noise/proximity alone) and exited ONLY by CHASE_GIVEUP_TIME passing with
+-- no sight of that player, full stop -- nothing else can knock a monster
+-- out of one state and into a muddled third condition.
+--
+-- Chase itself is deliberately simple right now, at your request: once
+-- chasing, always steer straight at the player's live position with
+-- Humanoid:Move(), completely ignoring walls/obstacles. No
+-- PathfindingService fallback, no exception for Thomas -- this is a
+-- reset back to the simplest possible version of chasing, to confirm the
+-- underlying steering itself reads as smooth before any obstacle-awareness
+-- comes back (a version of that layered on top of direct Move() steering
+-- caused more problems than it solved across several rounds of tuning).
+local CHASE_GIVEUP_TIME = 5
 
 function MonsterAI:Update(dt)
 	if self.paused or self.destroyed then
@@ -677,7 +617,7 @@ function MonsterAI:Update(dt)
 	local now = os.clock()
 
 	if self.god then
-		self:_updateGodChase(now)
+		self:_updateGodChase()
 		return
 	end
 
@@ -705,106 +645,49 @@ function MonsterAI:Update(dt)
 	if self.state == "Chase" then
 		local root = self.target and self.target:FindFirstChild("HumanoidRootPart")
 		local hum = self.target and self.target:FindFirstChildOfClass("Humanoid")
-		if not root or not hum or hum.Health <= 0 then
-			self.state = "Search"
-			self.currentPath = nil
-		else
+		if root and hum and hum.Health > 0 then
 			if self:_canSee(root) then
 				self.lastSightTime = now
-				self.lastKnownPos = root.Position
-			elseif now - self.lastSightTime > def.loseSightTime then
-				self.state = "Search"
+			end
+			if now - self.lastSightTime > CHASE_GIVEUP_TIME then
+				-- Haven't seen them in CHASE_GIVEUP_TIME -- give up and
+				-- resume Patrol. No "go check where I last saw them"
+				-- detour; that PathfindingService-routed detour was
+				-- exactly what could visibly loop before finally reaching
+				-- a target that never even moved.
+				self.state = "Patrol"
+				self.target = nil
 				self.currentPath = nil
-			end
-
-			self.humanoid.WalkSpeed = self:_applyQuirkSpeed(def.chaseSpeed)
-
-			-- _hasClearPath is a single raycast/spherecast reading, and a
-			-- single frame's reading isn't trustworthy enough to act on
-			-- immediately: right next to a corner or doorway jamb it can
-			-- flip to "blocked" for just one frame from ordinary geometry
-			-- noise. Reacting to that instantly used to mean requesting a
-			-- brand new PathfindingService route and steering at ITS first
-			-- waypoint that same frame -- a real, if brief, detour off the
-			-- player's actual position, which reads exactly as "veers off
-			-- to the side" mid-chase. Requiring the blocked reading to hold
-			-- for BLOCKED_DEBOUNCE seconds before actually rerouting means
-			-- a one-frame flicker gets ignored and direct-chase just
-			-- continues; a genuine wall stays blocked well past that
-			-- window, so real obstacles still reroute quickly.
-			local clearNow = self:_hasClearPath(root.Position, self.target)
-			if clearNow then
-				self.blockedSince = nil
 			else
-				self.blockedSince = self.blockedSince or now
-			end
-			local reallyBlocked = self.blockedSince and (now - self.blockedSince > BLOCKED_DEBOUNCE)
-
-			if def.quirk == "wideBody" or reallyBlocked then
-				local pathExhausted = not self.currentPath or not self.currentPath[self.pathIndex]
-				if pathExhausted then
-					-- No path in flight at all right now -- e.g. we just lost
-					-- the direct line rounding a corner. Get one immediately;
-					-- don't sit still waiting out the repath throttle below,
-					-- which was causing a freeze right at the moments (corner
-					-- transitions) where responsiveness matters most.
-					self.lastPathTime = now
-					self.lastChaseTargetPos = root.Position
-					self:_moveAlongPath(self:_pathTo(root.Position) or {})
-				elseif now - self.lastPathTime > def.repathInterval then
-					-- Recomputing a brand new PathfindingService route every
-					-- single interval -- even when the target has barely
-					-- moved -- lets it flip-flop between two similarly-good
-					-- routes through the maze's loops/shortcuts, which reads
-					-- as indecisive/erratic. Only replace an in-flight route
-					-- once the target has moved meaningfully.
-					local targetMoved = (not self.lastChaseTargetPos)
-						or (root.Position - self.lastChaseTargetPos).Magnitude > 8
-					if targetMoved then
-						self.lastPathTime = now
-						self.lastChaseTargetPos = root.Position
-						self:_moveAlongPath(self:_pathTo(root.Position) or {})
-					end
-				end
-				self:_followCurrentPath()
-			else
+				self.humanoid.WalkSpeed = self:_applyQuirkSpeed(def.chaseSpeed)
 				self.currentPath = nil
 				self:_steerToward(root.Position)
 			end
-			return
-		end
-	end
-
-	if self.state == "Search" then
-		self.humanoid.WalkSpeed = def.investigateSpeed
-		self.searchUntil = self.searchUntil or (now + 4)
-		self:_ensurePath(self.lastKnownPos or self:_randomPatrolTarget())
-		local reachedEnd = self:_followCurrentPath()
-		if reachedEnd and (self.searchUntil and now > self.searchUntil) then
+		else
 			self.state = "Patrol"
-			self.searchUntil = nil
+			self.target = nil
 			self.currentPath = nil
 		end
 		return
 	end
 
-	if self.state == "Investigate" then
-		self.humanoid.WalkSpeed = def.investigateSpeed
-		self:_ensurePath(self.investigatePos)
-		local reachedEnd = self:_followCurrentPath()
-		if reachedEnd then
-			self.state = "Patrol"
-			self.currentPath = nil
-		end
-		return
-	end
-
-	-- Patrol (default)
+	-- Patrol (the only other state). A noise alert (ReceiveAlert -- a
+	-- minigame station running, Dora's callout) just swaps in a specific
+	-- destination here for a while instead of a random one; it never
+	-- becomes a different state.
 	self.humanoid.WalkSpeed = def.patrolSpeed
-	self:_ensurePath(self:_randomPatrolTarget())
+	local destination
+	if self.investigatePos and now < (self.investigateUntil or 0) then
+		destination = self.investigatePos
+	else
+		self.investigatePos = nil
+		destination = self:_randomPatrolTarget()
+	end
+	self:_ensurePath(destination)
 	local reachedEnd = self:_followCurrentPath()
 	if reachedEnd then
 		self.currentPath = nil
+		self.investigatePos = nil
 	end
 
 	-- Occasional audio tell (SpongeBob's giggle, George's chatter, etc).

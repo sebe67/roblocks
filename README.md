@@ -92,106 +92,106 @@ in Workspace. A totally blank new place works fine.
   before this goes public, same as `/godmode`).
 - **8 monsters**, each with its own stat block and one mechanical quirk, all
   tuned in `ReplicatedStorage/Shared/Config.lua` (see below).
-- **Sight-based AI** (`MonsterAI.lua`): a Patrol → Investigate → Chase →
-  Search state machine. A monster only ever starts a real chase because it
-  directly saw a player (distance + field-of-view cone + an unobstructed
-  raycast) — it never teleports knowledge of your position into itself.
-  "Investigate" (from noise or Dora's callout) only ever sends it toward a
-  *location*. Every state moves the same way: `_steerToward(point)` turns
-  toward whatever point matters right now (the player's live position
-  during Chase, a `PathfindingService` waypoint everywhere else, including
-  Chase when a wall blocks the direct line) and calls `Humanoid:Move()` —
-  a continuous "here's my desired direction this frame" input, the same
-  API a player's own WASD ultimately drives. **Nothing in `MonsterAI.lua`
-  calls `Humanoid:MoveTo()` anymore.**
+- **Sight-based AI** (`MonsterAI.lua`): exactly two states, **Patrol** and
+  **Chase**, structured so neither can interfere with the other. Chase is
+  entered *only* by directly seeing a player (distance + field-of-view cone
+  + an unobstructed raycast — never by teleporting knowledge of your
+  position into a monster) and exited *only* when `CHASE_GIVEUP_TIME` (5s)
+  passes with no sight of that player, full stop — no third state, no
+  "go check where I last saw them" detour, nothing else that can knock a
+  monster out of one state into a muddled condition between the two. A
+  noise alert (a minigame station running, Dora's callout quirk) never
+  starts a real Chase either; it just gives Patrol a specific destination
+  to head toward for a while instead of a random one (`ReceiveAlert`), so
+  it's a variant of Patrol rather than its own state.
 
-  That used to be the movement method for anything with a fixed
-  destination — every patrol point, every investigate/search target, the
-  pathfinding fallback during Chase — called once per frame toward whatever
-  point that state currently wanted. `MoveTo` is built for a one-shot "walk
-  to this exact spot and stop," and calling it every single frame toward a
-  constantly-shifting target (a fresh random patrol point, a live player,
-  whatever) resets the humanoid's internal walk/turn state on every call.
-  That reset turned out to be the real source of the reported flailing —
-  and critically, it wasn't specific to chasing a moving player (that was
-  just the easiest place to *notice* it): plain Patrol, aiming at a
-  perfectly static point with nothing chasing anything, showed the exact
-  same wild left-right/backwards/overshoot behavior once it was actually
-  checked, which is what gave this away — chase-specific fixes across
-  several rounds couldn't have touched Patrol/Investigate/Search at all,
-  since those never shared any of that code. Now every state, with no
-  exceptions, drives movement through the one `_steerToward` primitive.
-  Thomas (wideBody) still always takes the pathfinding path rather than a
-  direct line, so he can't route himself through a doorway too narrow for
-  him, same as before — he just steers toward his waypoints via `Move()`
-  now too, like everything else.
+  **Chase is deliberately simple right now, by request**: once chasing, a
+  monster always steers straight at the player's live position with
+  `Humanoid:Move()` — a continuous "here's my desired direction this
+  frame" input, the same API a player's own WASD ultimately drives —
+  completely ignoring walls and obstacles. No `PathfindingService`
+  fallback, no exception for Thomas. This is a deliberate reset to the
+  simplest possible version of chasing after several rounds where
+  obstacle-awareness layered on top of direct `Move()` steering kept
+  reintroducing its own problems (see below) — the point right now is
+  confirming the core steering itself reads as smooth in isolation before
+  anything else comes back. **Nothing in `MonsterAI.lua` calls
+  `Humanoid:MoveTo()` anymore** — Patrol still uses `PathfindingService`
+  (see below), but follows its waypoints with the same `Move()`-based
+  `_steerToward` primitive Chase uses, not `MoveTo()`.
 
-  Two more chase-specific wrinkles in whether the direct line reads as
-  clear (`_hasClearPath`): first, right next to a corner or doorway jamb
-  that single spherecast reading can flicker to "blocked" for one frame
-  from ordinary geometry noise. Reacting to that instantly used to mean
-  requesting a brand new `PathfindingService` route and steering at *its*
-  first waypoint that same frame — a real, brief detour off the player's
-  actual position, visible as the monster veering to the side mid-chase.
-  `BLOCKED_DEBOUNCE` (0.15s) fixes this: the blocked reading has to hold
-  for that long before chase actually reroutes, so a one-frame flicker
-  gets ignored and direct-chase just continues, while a genuine wall
-  (which stays blocked well past that window) still reroutes quickly.
-  Second, and more impactful: the spherecast has real width (sized to
-  the monster's own `pathAgentRadius`), so aimed at a player it can clip
-  an off-center part of *their own body* — a shoulder, an arm, their head,
-  easily more than the couple studs a naive "close enough to the target"
-  distance check tolerated — and misreport that as a wall in the way, with
-  nothing actually blocking anything. Which body part (if any) gets
-  clipped shifts constantly with approach angle, so this alone produced
-  both symptoms: veering with nothing in the way, and repeated
-  direct-chase/pathfinding switching that reads as erratic. `_canSee`
-  already excluded the target's own body correctly (checking whether the
-  raycast hit is a descendant of the target's character); `_hasClearPath`
-  now takes the target's character as a second argument and does the same,
-  instead of guessing a distance threshold.
+  **Patrol** requests a route to a random point on the grid (or an alert
+  location) via `PathfindingService` and walks its waypoints. Its
+  `WaypointSpacing` was widened from 4 to 16: that setting is the *maximum*
+  gap between waypoints, not a target, so at 4 it was forcing extra
+  waypoints along dead-straight stretches through these big rooms (up to
+  110 studs across) — each one a tiny excuse to nudge direction, which is
+  what patrol read as erratic even with nothing chasing it. At 16, a
+  straight room interior collapses to a couple of waypoints while a real
+  turn (a doorway, a corner) still forces one, since the route genuinely
+  bends there — so direction changes now line up with actual intersections
+  instead of firing every few studs.
 
-  Three more contributors turned up chasing a report of a monster orbiting
-  almost 360° around a *stationary* player at a moderate distance before
-  finally reaching them — a straight line to a fixed point can't itself
-  curve, so this meant the monster was leaving direct-chase for a computed
-  `PathfindingService` route for a real stretch of time:
-  1. **Physical collision.** Monsters and players both had `CanCollide =
-     true`, so once adjacent, Roblox's own rigid-body physics would shove
-     them apart every single frame the monster (still steering straight at
-     the player's center) tried to walk into someone it had already
-     reached. The catch is purely a `Touched`-event trigger, never a
-     physical block, so there was never a gameplay reason for that
-     collision to exist. Monsters and players are now in separate
-     `PhysicsService` collision groups (set non-collidable with each
-     other, both still collide normally with walls/floor) — see the setup
-     in `Main.server.lua`. `Touched` still fires the same either way (it
-     depends on `CanTouch`, not `CanCollide`).
-  2. **A missed decorative part.** Every minigame station's floor "Accent"
-     glow was `CanCollide = false` but not `CanQuery = false` (unlike the
-     Floors folder, excluded from raycasts for the same reason) — a
-     near-floor-level plate spanning almost an entire station cell, exactly
-     the kind of thing a clearance spherecast can clip and misreport as a
-     wall.
-  3. **Losing sight at close range.** `_canSee`'s facing-cone (FOV) check
-     could fail while actively chasing if the monster's own facing lagged
-     its movement direction by even a few degrees — pure steering noise,
-     not evidence the player left. Failing it for longer than
-     `loseSightTime` drops Chase into the Search state, which paths to
-     `lastKnownPos` via `PathfindingService` — a computed route that can
-     visibly loop before its final approach, even to a target that never
-     moved. Within `Config.MeleeAwareRadius` (10 studs) of the target,
-     `_canSee` now skips the facing check entirely: something that close
-     shouldn't need to be looked at head-on to know it's there.
+  Getting the steering itself right took a few more rounds than expected —
+  worth recording *why*, since some of these look like they shouldn't have
+  mattered:
+  - `Humanoid:MoveTo()` is built for a one-shot "walk to this exact spot
+    and stop." Calling it every frame toward a constantly-shifting target
+    (a live player, even a fresh random patrol point) resets the
+    humanoid's internal walk/turn state on every call — and that reset,
+    not any particular target, was the real source of reported flailing.
+    It wasn't isolated to chasing a moving player (that was just the
+    easiest place to notice it): plain Patrol, aiming at a perfectly
+    static point with nothing chasing anything, showed the exact same wild
+    left-right/backwards/overshoot behavior once actually checked, which
+    is what gave this away — chase-specific fixes across several rounds
+    couldn't have touched Patrol at all, since it never shared that code.
+  - Layering obstacle-awareness back on top of `Move()`-based chase (fall
+    back to a `PathfindingService` route when a wall blocks the direct
+    line) reintroduced the same class of bug from a different angle: the
+    per-frame "is the line clear" check (`_hasClearPath`, a spherecast)
+    could flicker for a single frame from ordinary geometry noise near a
+    corner, and reacting to that instantly meant requesting a brand-new
+    route and steering at *its* first waypoint that same frame — a real,
+    brief detour off the player's position, visible as veering to the
+    side. It could also clip an off-center part of the *target's own
+    body* (a shoulder, an arm, their head) and misreport that as a wall
+    with nothing actually in the way — which shifts with approach angle,
+    so it alone produced both veering and repeated switching that read as
+    erratic.
+  - Monsters and players both had `CanCollide = true`, so once adjacent,
+    physics would shove them apart every frame a monster (still steering
+    at the player's exact center) tried to walk into someone it had
+    already reached — sliding it around the player's collision shape
+    instead of ever registering contact, which is what an "orbits before
+    finally touching" report looks like from outside. The catch is purely
+    a `Touched`-event trigger, never a physical block, so this collision
+    never served a purpose; monsters and players are now in separate
+    `PhysicsService` collision groups, non-collidable with each other but
+    both still collide normally with walls/floor (`Main.server.lua`).
+    `Touched` still fires the same either way — it depends on `CanTouch`,
+    not `CanCollide`.
+  - `_canSee`'s facing-cone (FOV) check could fail while a monster was
+    actively chasing just because its own facing lagged its movement
+    direction by a few degrees — steering noise, not the player leaving —
+    and losing sight that way used to drop Chase into a "go check their
+    last known position" detour, which could visibly loop before its
+    final approach even though the target never moved. Within
+    `Config.MeleeAwareRadius` (10 studs), `_canSee` now skips the facing
+    check entirely: something that close doesn't need to be looked at
+    head-on to know it's there.
+  - SpongeBob's `lightsOut` quirk update ran inline inside the same
+    `Update()` call that drives movement — the one per-frame difference
+    between his chase and everyone else's — so it now runs on its own
+    independent `task.spawn` timer (`_updateLightsOut`), unable to affect
+    a movement command's timing regardless of what it does internally.
 
-  Debugging this also turned up that the flailing was reported worse for
-  SpongeBob than other monsters despite all of them sharing this exact
-  movement code — the one per-frame difference was his `lightsOut` quirk
-  update running inline inside the same `Update()` call that drives
-  movement, so it's now been moved onto its own independent `task.spawn`
-  timer (see `_updateLightsOut`), guaranteeing it can never affect a
-  movement command's timing for that frame regardless of what it does
-  internally.
+  Thomas (wideBody) no longer gets a special exception during Chase — he
+  now blindly beelines like everyone else, which temporarily means he can
+  attempt to walk into a doorway too narrow for him mid-chase (he'll just
+  be physically blocked by the wall rather than routing around it) until
+  obstacle-awareness returns for everyone.
+
   Monsters are scattered at least `Config.Maze.MonsterSpawnExclusionCells`
   cells from the (now-central) spawn point both at server boot and again at
   the start of every round (`MonsterSpawner.RepositionAll`), so one can't
@@ -248,23 +248,25 @@ in Workspace. A totally blank new place works fine.
 
 | Monster | Vibe | Mechanical quirk |
 |---|---|---|
-| Curious George | fast, erratic | randomly juks direction mid-chase |
+| Curious George | fast | *(no coded quirk yet — his `erratic` tag is currently just flavor; see below)* |
 | Peppa Pig | medium | short speed bursts ("snort") while chasing |
-| Thomas the Tank Engine | slow patrol, very fast chase | **too wide for narrow doorways** — can only cross between rooms via the wider hallway-style gaps |
+| Thomas the Tank Engine | slow patrol, very fast chase | **too wide for narrow doorways** while patrolling — can only cross between rooms via the wider hallway-style gaps. Chase currently ignores this (see below) |
 | Barney | slow, huge | loud footsteps (bigger hearing radius) — telegraphed |
 | The Grinch | fast | faster and sees further in cells whose ceiling fixture is actually dead |
 | Kung Fu Panda | medium | occasional straight-line dash burst |
 | SpongeBob | medium | **kills every working light near him as he moves** (they come back ~15s after he leaves, see below) |
 | Dora | medium | **spotting you alerts every other monster to your last position** |
 
-Thomas's restriction isn't a special-cased graph anymore — it falls out
-naturally from giving him a much larger `pathAgentRadius` in
-`MonsterAI.lua`'s PathfindingService calls than every other monster. A
-bigger agent radius makes Roblox's navmesh solver treat narrow doorways as
-too tight to fit through, so he's automatically routed only through wide
-hallway gaps and open rooms, with zero bespoke pathing code. Simpler than
-the old rail-graph approach and ties his restriction directly to the new
-room/doorway structure instead of an arbitrary lattice.
+Thomas's restriction isn't a special-cased graph — it falls out naturally
+from giving him a much larger `pathAgentRadius` in `MonsterAI.lua`'s
+PathfindingService calls than every other monster. A bigger agent radius
+makes Roblox's navmesh solver treat narrow doorways as too tight to fit
+through, so he's automatically routed only through wide hallway gaps and
+open rooms whenever he's actually pathfinding, with zero bespoke pathing
+code. Since Chase currently always steers straight regardless of walls
+(see "Sight-based AI" above), this restriction is only enforced while he's
+patrolling for now — his defining quirk will apply during Chase again once
+obstacle-awareness comes back for everyone.
 
 You asked for more roster ideas: **Bluey, the Teletubbies (Tinky Winky),
 Cocomelon's JJ, and SpongeBob/Dora's Nickelodeon stablemate Baby Shark**
