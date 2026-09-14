@@ -472,19 +472,14 @@ end
 function MonsterAI:_moveAlongPath(waypoints)
 	self.currentPath = waypoints
 	self.pathIndex = 1
-	self._lastCommandedPoint = nil
 end
 
--- useContinuousSteer: Chase passes true so waypoint-following shares the
--- exact same Humanoid:Move() call _chaseDirectly uses for the direct case,
--- instead of Humanoid:MoveTo() -- so a chasing monster NEVER touches MoveTo
--- in any of its sub-paths and can't alternate between the two APIs
--- mid-chase (see the long comment in Update() for why that alternation was
--- itself indistinguishable from -- and quite possibly the actual cause of
--- -- the reported flailing). Patrol/Investigate/Search still pass nothing
--- and keep using MoveTo, which is the right tool for a mostly-static
--- destination you're not fighting a moving target toward.
-function MonsterAI:_followCurrentPath(dt, useContinuousSteer)
+-- Walks the current waypoint list, advancing to the next one once within 3
+-- studs of the current target so the monster never needs to precisely
+-- "arrive" anywhere. Steers with _steerToward (Humanoid:Move()) the same as
+-- every other kind of movement in this file -- see _steerToward's comment
+-- for why nothing here ever calls Humanoid:MoveTo() anymore.
+function MonsterAI:_followCurrentPath()
 	if not self.currentPath or not self.currentPath[self.pathIndex] then
 		return true
 	end
@@ -497,16 +492,7 @@ function MonsterAI:_followCurrentPath(dt, useContinuousSteer)
 		end
 		targetPoint = self.currentPath[self.pathIndex]
 	end
-	if useContinuousSteer then
-		self:_chaseDirectly(targetPoint)
-	elseif self._lastCommandedPoint ~= targetPoint then
-		-- Only issue a new MoveTo when the target waypoint actually changes --
-		-- calling Humanoid:MoveTo() every single frame (even at the same
-		-- target) repeatedly interrupts the humanoid's walk state and is
-		-- what was causing the stuttery/erratic-looking movement.
-		self.humanoid:MoveTo(targetPoint)
-		self._lastCommandedPoint = targetPoint
-	end
+	self:_steerToward(targetPoint)
 	return false
 end
 
@@ -553,20 +539,25 @@ function MonsterAI:_applyQuirkSpeed(baseSpeed)
 	return baseSpeed
 end
 
--- Continuous steering toward a live (possibly moving) target position --
--- straight-line only, no obstacle awareness (see Update()'s comment on
--- why that's disabled for now). Uses Humanoid:Move (a per-frame desired
--- direction, exactly like a player's own WASD input) rather than
--- Humanoid:MoveTo (a one-shot "walk to this waypoint and stop" command).
--- MoveTo is the wrong tool here: calling it every frame toward a
--- continuously-moving player resets the humanoid's internal walk/turn state
--- on every single call, and once close to the player the target's angle
--- relative to the monster swings hard and often enough that the resets
--- themselves were the flailing -- wide S-turns, brief backward lurches,
--- overshooting past the player entirely. Move() has none of that: it just
--- sets a desired direction each frame and lets the humanoid's normal
--- turn/walk physics carry it smoothly, the same as it does for a player.
-function MonsterAI:_chaseDirectly(targetPos)
+-- The ONE movement primitive for every monster in every state: turns
+-- toward targetPos (a live player position or a pathfinding waypoint, it
+-- doesn't care which) and steers that way this frame, via Humanoid:Move()
+-- -- a per-frame "here's my desired direction," exactly like a player's own
+-- WASD input. Nothing in this file calls Humanoid:MoveTo() anymore.
+--
+-- MoveTo is a one-shot "walk to this exact waypoint and stop" command, and
+-- every state (Patrol, Investigate, Search, Chase) used to call it once per
+-- frame toward its own kind of constantly-shifting target -- a fresh random
+-- patrol point, a moving player, whatever. Each call resets the humanoid's
+-- internal walk/turn state, and that reset is where the flailing was really
+-- coming from: it wasn't isolated to chasing a moving player (recalling it
+-- toward player was only where it was easiest to notice) -- it happened to
+-- every monster, in every state, including plain Patrol with nothing to
+-- chase at all, exactly as reported. Move() has none of that: it just sets
+-- a desired direction each frame and lets the humanoid's normal turn/walk
+-- physics carry it smoothly, so a moving target (or a changing waypoint)
+-- never needs a state reset to follow.
+function MonsterAI:_steerToward(targetPos)
 	local toTarget = targetPos - self.root.Position
 	toTarget = Vector3.new(toTarget.X, 0, toTarget.Z)
 	if toTarget.Magnitude > 0.1 then
@@ -627,10 +618,10 @@ function MonsterAI:_updateGodChase(now)
 			self.lastPathTime = now
 			self:_moveAlongPath(self:_pathTo(nearestRoot.Position) or {})
 		end
-		self:_followCurrentPath(0, true)
+		self:_followCurrentPath()
 	else
 		self.currentPath = nil
-		self:_chaseDirectly(nearestRoot.Position)
+		self:_steerToward(nearestRoot.Position)
 	end
 end
 
@@ -684,19 +675,11 @@ function MonsterAI:Update(dt)
 
 			self.humanoid.WalkSpeed = self:_applyQuirkSpeed(def.chaseSpeed)
 
-			-- Obstacle-awareness is back, but restructured so chase NEVER
-			-- calls Humanoid:MoveTo() in any of its sub-paths -- only
-			-- Humanoid:Move(), whether aiming directly at the player or at
-			-- a pathfinding waypoint (_followCurrentPath's useContinuousSteer
-			-- argument). Earlier this branched every frame between a direct
-			-- Move() and a MoveTo()-based path fallback; those two APIs
-			-- manipulate the humanoid's walk/turn state differently, so if
-			-- _hasClearPath ever flickered true/false between consecutive
-			-- frames (plausible near a corner/doorway, or just geometry
-			-- noise), the resulting API alternation could itself look like
-			-- exactly the flailing that got reported. Needing pathfinding
-			-- at all no longer means switching APIs, only switching what
-			-- point this frame's Move() call aims at.
+			-- Falls back to a PathfindingService route when a wall blocks
+			-- the direct line to the player (or always, for Thomas). Both
+			-- branches steer via _followCurrentPath/_steerToward, i.e. only
+			-- ever Humanoid:Move() -- see _steerToward's comment for why
+			-- that matters.
 			if def.quirk == "wideBody" or not self:_hasClearPath(root.Position) then
 				local pathExhausted = not self.currentPath or not self.currentPath[self.pathIndex]
 				if pathExhausted then
@@ -723,10 +706,10 @@ function MonsterAI:Update(dt)
 						self:_moveAlongPath(self:_pathTo(root.Position) or {})
 					end
 				end
-				self:_followCurrentPath(dt, true)
+				self:_followCurrentPath()
 			else
 				self.currentPath = nil
-				self:_chaseDirectly(root.Position)
+				self:_steerToward(root.Position)
 			end
 			return
 		end
@@ -736,7 +719,7 @@ function MonsterAI:Update(dt)
 		self.humanoid.WalkSpeed = def.investigateSpeed
 		self.searchUntil = self.searchUntil or (now + 4)
 		self:_ensurePath(self.lastKnownPos or self:_randomPatrolTarget())
-		local reachedEnd = self:_followCurrentPath(dt)
+		local reachedEnd = self:_followCurrentPath()
 		if reachedEnd and (self.searchUntil and now > self.searchUntil) then
 			self.state = "Patrol"
 			self.searchUntil = nil
@@ -748,7 +731,7 @@ function MonsterAI:Update(dt)
 	if self.state == "Investigate" then
 		self.humanoid.WalkSpeed = def.investigateSpeed
 		self:_ensurePath(self.investigatePos)
-		local reachedEnd = self:_followCurrentPath(dt)
+		local reachedEnd = self:_followCurrentPath()
 		if reachedEnd then
 			self.state = "Patrol"
 			self.currentPath = nil
@@ -759,7 +742,7 @@ function MonsterAI:Update(dt)
 	-- Patrol (default)
 	self.humanoid.WalkSpeed = def.patrolSpeed
 	self:_ensurePath(self:_randomPatrolTarget())
-	local reachedEnd = self:_followCurrentPath(dt)
+	local reachedEnd = self:_followCurrentPath()
 	if reachedEnd then
 		self.currentPath = nil
 	end

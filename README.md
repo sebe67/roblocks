@@ -97,28 +97,38 @@ in Workspace. A totally blank new place works fine.
   directly saw a player (distance + field-of-view cone + an unobstructed
   raycast) — it never teleports knowledge of your position into itself.
   "Investigate" (from noise or Dora's callout) only ever sends it toward a
-  *location*. Chasing steers straight at your live position every frame with
-  `Humanoid:Move()` — a continuous "here's the desired direction this
-  frame" input, the same API a player's own WASD ultimately drives — via
-  `_chaseDirectly` in `MonsterAI.lua`.
+  *location*. Every state moves the same way: `_steerToward(point)` turns
+  toward whatever point matters right now (the player's live position
+  during Chase, a `PathfindingService` waypoint everywhere else, including
+  Chase when a wall blocks the direct line) and calls `Humanoid:Move()` —
+  a continuous "here's my desired direction this frame" input, the same
+  API a player's own WASD ultimately drives. **Nothing in `MonsterAI.lua`
+  calls `Humanoid:MoveTo()` anymore.**
 
-  When a wall blocks that straight line, it falls back to `PathfindingService`
-  waypoints — but critically, waypoint-following *also* steers with
-  `Humanoid:Move()` now (`_followCurrentPath`'s `useContinuousSteer`
-  argument), not `Humanoid:MoveTo()`. Chase never calls `MoveTo()` in any of
-  its sub-paths anymore. Earlier it branched every frame between direct
-  `Move()` and a `MoveTo()`-based path fallback depending on
-  `_hasClearPath`; if that raycast ever flickered true/false between
-  consecutive frames (plausible near a corner/doorway, or just geometry
-  noise), the monster would alternate between two APIs that manipulate the
-  humanoid's walk/turn state differently, which reads exactly like the
-  reported "wildly left-right, sometimes backwards, overshooting past the
-  player." Needing pathfinding no longer means switching APIs, only
-  switching what point that frame's `Move()` call aims at. Thomas (wideBody)
-  always takes the pathfinding path regardless of `_hasClearPath`, same as
-  before. Debugging this also turned up that the flailing was reported
-  worse for SpongeBob than other monsters despite all of them sharing this
-  exact chase code — the one per-frame difference was his `lightsOut` quirk
+  That used to be the movement method for anything with a fixed
+  destination — every patrol point, every investigate/search target, the
+  pathfinding fallback during Chase — called once per frame toward whatever
+  point that state currently wanted. `MoveTo` is built for a one-shot "walk
+  to this exact spot and stop," and calling it every single frame toward a
+  constantly-shifting target (a fresh random patrol point, a live player,
+  whatever) resets the humanoid's internal walk/turn state on every call.
+  That reset turned out to be the real source of the reported flailing —
+  and critically, it wasn't specific to chasing a moving player (that was
+  just the easiest place to *notice* it): plain Patrol, aiming at a
+  perfectly static point with nothing chasing anything, showed the exact
+  same wild left-right/backwards/overshoot behavior once it was actually
+  checked, which is what gave this away — chase-specific fixes across
+  several rounds couldn't have touched Patrol/Investigate/Search at all,
+  since those never shared any of that code. Now every state, with no
+  exceptions, drives movement through the one `_steerToward` primitive.
+  Thomas (wideBody) still always takes the pathfinding path rather than a
+  direct line, so he can't route himself through a doorway too narrow for
+  him, same as before — he just steers toward his waypoints via `Move()`
+  now too, like everything else.
+
+  Debugging this also turned up that the flailing was reported worse for
+  SpongeBob than other monsters despite all of them sharing this exact
+  movement code — the one per-frame difference was his `lightsOut` quirk
   update running inline inside the same `Update()` call that drives
   movement, so it's now been moved onto its own independent `task.spawn`
   timer (see `_updateLightsOut`), guaranteeing it can never affect a
