@@ -315,7 +315,18 @@ end
 -- player. Matching the radius to what pathfinding already treats as "fits"
 -- keeps the two systems in agreement: if this says clear, the body actually
 -- fits, full stop.
-function MonsterAI:_hasClearPath(targetPos)
+-- targetCharacter (optional): the model the spherecast is aiming at, so its
+-- own body doesn't count as "blocking" the path to itself. Without this, a
+-- hit on the target's own shoulder/arm/head -- easily >2 studs from their
+-- root position, well within reach of a radius-2 spherecast -- read as a
+-- real obstacle purely because of their own geometry, with zero walls
+-- involved: exactly the "still veers with nothing in the way" and
+-- intermittent erratic-switching reported, since which part of their body
+-- (if any) gets clipped shifts constantly with approach angle. _canSee
+-- already handled this correctly (see its IsDescendantOf check above) --
+-- this brings _hasClearPath in line with it instead of guessing a distance
+-- threshold.
+function MonsterAI:_hasClearPath(targetPos, targetCharacter)
 	local origin = self.root.Position
 	local direction = targetPos - origin
 	if direction.Magnitude < 1 then
@@ -329,7 +340,10 @@ function MonsterAI:_hasClearPath(targetPos)
 	if not result then
 		return true
 	end
-	return (result.Position - targetPos).Magnitude < 2
+	if targetCharacter and result.Instance:IsDescendantOf(targetCharacter) then
+		return true
+	end
+	return false
 end
 
 function MonsterAI:_inDarkCell()
@@ -618,7 +632,7 @@ function MonsterAI:_updateGodChase(now)
 	-- Humanoid:Move() ever runs during chase. Same debounce too -- see the
 	-- comment in Update() -- so a single flickered "blocked" reading can't
 	-- yank a godmode monster off toward a waypoint instead of the player.
-	local clearNow = self:_hasClearPath(nearestRoot.Position)
+	local clearNow = self:_hasClearPath(nearestRoot.Position, nearestPlayer.Character)
 	if clearNow then
 		self.blockedSince = nil
 	else
@@ -702,7 +716,7 @@ function MonsterAI:Update(dt)
 			-- a one-frame flicker gets ignored and direct-chase just
 			-- continues; a genuine wall stays blocked well past that
 			-- window, so real obstacles still reroute quickly.
-			local clearNow = self:_hasClearPath(root.Position)
+			local clearNow = self:_hasClearPath(root.Position, self.target)
 			if clearNow then
 				self.blockedSince = nil
 			else

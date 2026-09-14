@@ -126,18 +126,30 @@ in Workspace. A totally blank new place works fine.
   him, same as before — he just steers toward his waypoints via `Move()`
   now too, like everything else.
 
-  One more chase-specific wrinkle: whether the direct line is clear is a
-  single raycast/spherecast reading (`_hasClearPath`) taken fresh every
-  frame, and right next to a corner or doorway jamb that reading can
-  flicker to "blocked" for a single frame from ordinary geometry noise.
-  Reacting to that instantly used to mean requesting a brand new
-  `PathfindingService` route and steering at *its* first waypoint that same
-  frame — a real, brief detour off the player's actual position, visible as
-  the monster veering to the side mid-chase. `BLOCKED_DEBOUNCE` (0.15s)
-  fixes this: the blocked reading has to hold for that long before chase
-  actually reroutes, so a one-frame flicker gets ignored and direct-chase
-  just continues, while a genuine wall (which stays blocked well past that
-  window) still reroutes quickly.
+  Two more chase-specific wrinkles in whether the direct line reads as
+  clear (`_hasClearPath`): first, right next to a corner or doorway jamb
+  that single spherecast reading can flicker to "blocked" for one frame
+  from ordinary geometry noise. Reacting to that instantly used to mean
+  requesting a brand new `PathfindingService` route and steering at *its*
+  first waypoint that same frame — a real, brief detour off the player's
+  actual position, visible as the monster veering to the side mid-chase.
+  `BLOCKED_DEBOUNCE` (0.15s) fixes this: the blocked reading has to hold
+  for that long before chase actually reroutes, so a one-frame flicker
+  gets ignored and direct-chase just continues, while a genuine wall
+  (which stays blocked well past that window) still reroutes quickly.
+  Second, and more impactful: the spherecast has real width (sized to
+  the monster's own `pathAgentRadius`), so aimed at a player it can clip
+  an off-center part of *their own body* — a shoulder, an arm, their head,
+  easily more than the couple studs a naive "close enough to the target"
+  distance check tolerated — and misreport that as a wall in the way, with
+  nothing actually blocking anything. Which body part (if any) gets
+  clipped shifts constantly with approach angle, so this alone produced
+  both symptoms: veering with nothing in the way, and repeated
+  direct-chase/pathfinding switching that reads as erratic. `_canSee`
+  already excluded the target's own body correctly (checking whether the
+  raycast hit is a descendant of the target's character); `_hasClearPath`
+  now takes the target's character as a second argument and does the same,
+  instead of guessing a distance threshold.
 
   Debugging this also turned up that the flailing was reported worse for
   SpongeBob than other monsters despite all of them sharing this exact
