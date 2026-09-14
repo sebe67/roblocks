@@ -103,6 +103,11 @@ local function createRig(def)
 	root.Color = def.color
 	root.Material = Enum.Material.SmoothPlastic
 	root.CanCollide = true
+	-- Physically colliding with players was causing the AI to shove them
+	-- and get shoved right back every frame it tried to walk into someone
+	-- it had already reached -- see the collision-group setup in
+	-- Main.server.lua for why that's disabled and why Touched still works.
+	root.CollisionGroup = "Monsters"
 	root.Parent = model
 	model.PrimaryPart = root
 
@@ -283,11 +288,22 @@ function MonsterAI:_canSee(targetRoot)
 		return false
 	end
 
-	local dir = toTarget.Unit
-	local look = self.root.CFrame.LookVector
-	local angle = math.deg(math.acos(math.clamp(look:Dot(dir), -1, 1)))
-	if angle > def.sightAngle then
-		return false
+	-- Within melee range, skip the facing-cone check entirely -- a monster
+	-- that's basically on top of someone shouldn't lose track of them
+	-- purely because its facing lags its own movement direction by a few
+	-- degrees (steering, not intent). Losing sight this way while still
+	-- chasing at close quarters was dropping Chase into the Search state,
+	-- which paths to lastKnownPos via PathfindingService -- a computed
+	-- route that can visibly loop before the final approach even though
+	-- the target never moved, which is what an "orbits before touching"
+	-- report at close-to-moderate range looks like from the outside.
+	if dist > Config.MeleeAwareRadius then
+		local dir = toTarget.Unit
+		local look = self.root.CFrame.LookVector
+		local angle = math.deg(math.acos(math.clamp(look:Dot(dir), -1, 1)))
+		if angle > def.sightAngle then
+			return false
+		end
 	end
 
 	local params = RaycastParams.new()

@@ -23,12 +23,20 @@ function PlayerService.new(maze)
 	self.spectateEvent = Net.GetEvent("RequestSpectate")
 	self.escapedEvent = Net.GetEvent("PlayerEscaped")
 	self.spawnEvent = Net.GetEvent("RoundSpawn")
+	self.flashlightEvent = Net.GetEvent("ToggleFlashlight")
 
 	self.respawnEvent.OnServerEvent:Connect(function(player)
 		self:_handleRespawnRequest(player)
 	end)
 	self.spectateEvent.OnServerEvent:Connect(function(player)
 		self:_handleSpectateRequest(player)
+	end)
+	-- Toggled server-side (not by the client directly setting the
+	-- property) so the SpotLight's Enabled state is authoritative and
+	-- reliably replicates to every other client watching, not just its
+	-- owner.
+	self.flashlightEvent.OnServerEvent:Connect(function(player)
+		self:_toggleFlashlight(player)
 	end)
 
 	Players.PlayerAdded:Connect(function(player)
@@ -62,6 +70,49 @@ function PlayerService:_onCharacterAdded(player, character)
 			self:MarkDead(player, nil)
 		end
 	end)
+
+	-- Monsters never physically collide with players (see the collision
+	-- group setup in Main.server.lua) -- only the catch's Touched event
+	-- matters, not a physical block. Applied to every part (existing and
+	-- any added later, e.g. accessories) so nothing on the character slips
+	-- back into the default collidable group.
+	for _, part in ipairs(character:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.CollisionGroup = "Players"
+		end
+	end
+	character.DescendantAdded:Connect(function(descendant)
+		if descendant:IsA("BasePart") then
+			descendant.CollisionGroup = "Players"
+		end
+	end)
+
+	-- A real SpotLight on the Head (Face = Front, so it points wherever
+	-- the character is looking), off by default, toggled by
+	-- _toggleFlashlight -- a brand new one every respawn, so it never
+	-- carries an "on" state across characters.
+	local head = character:WaitForChild("Head")
+	local light = Instance.new("SpotLight")
+	light.Name = "Flashlight"
+	light.Face = Enum.NormalId.Front
+	light.Range = Config.Flashlight.Range
+	light.Angle = Config.Flashlight.Angle
+	light.Brightness = Config.Flashlight.Brightness
+	light.Color = Config.Flashlight.Color
+	light.Enabled = false
+	light.Parent = head
+end
+
+function PlayerService:_toggleFlashlight(player)
+	if player:GetAttribute("State") ~= "Alive" then
+		return
+	end
+	local character = player.Character
+	local head = character and character:FindFirstChild("Head")
+	local light = head and head:FindFirstChild("Flashlight")
+	if light then
+		light.Enabled = not light.Enabled
+	end
 end
 
 function PlayerService:_hideCharacter(player)

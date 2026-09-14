@@ -151,6 +151,39 @@ in Workspace. A totally blank new place works fine.
   now takes the target's character as a second argument and does the same,
   instead of guessing a distance threshold.
 
+  Three more contributors turned up chasing a report of a monster orbiting
+  almost 360° around a *stationary* player at a moderate distance before
+  finally reaching them — a straight line to a fixed point can't itself
+  curve, so this meant the monster was leaving direct-chase for a computed
+  `PathfindingService` route for a real stretch of time:
+  1. **Physical collision.** Monsters and players both had `CanCollide =
+     true`, so once adjacent, Roblox's own rigid-body physics would shove
+     them apart every single frame the monster (still steering straight at
+     the player's center) tried to walk into someone it had already
+     reached. The catch is purely a `Touched`-event trigger, never a
+     physical block, so there was never a gameplay reason for that
+     collision to exist. Monsters and players are now in separate
+     `PhysicsService` collision groups (set non-collidable with each
+     other, both still collide normally with walls/floor) — see the setup
+     in `Main.server.lua`. `Touched` still fires the same either way (it
+     depends on `CanTouch`, not `CanCollide`).
+  2. **A missed decorative part.** Every minigame station's floor "Accent"
+     glow was `CanCollide = false` but not `CanQuery = false` (unlike the
+     Floors folder, excluded from raycasts for the same reason) — a
+     near-floor-level plate spanning almost an entire station cell, exactly
+     the kind of thing a clearance spherecast can clip and misreport as a
+     wall.
+  3. **Losing sight at close range.** `_canSee`'s facing-cone (FOV) check
+     could fail while actively chasing if the monster's own facing lagged
+     its movement direction by even a few degrees — pure steering noise,
+     not evidence the player left. Failing it for longer than
+     `loseSightTime` drops Chase into the Search state, which paths to
+     `lastKnownPos` via `PathfindingService` — a computed route that can
+     visibly loop before its final approach, even to a target that never
+     moved. Within `Config.MeleeAwareRadius` (10 studs) of the target,
+     `_canSee` now skips the facing check entirely: something that close
+     shouldn't need to be looked at head-on to know it's there.
+
   Debugging this also turned up that the flailing was reported worse for
   SpongeBob than other monsters despite all of them sharing this exact
   movement code — the one per-frame difference was his `lightsOut` quirk
@@ -175,6 +208,14 @@ in Workspace. A totally blank new place works fine.
   floor contact) that read as a shaky jitter on top of the bob at sprint's
   bigger amplitude; smoothed with an exponential moving average, and tuned
   down from ~7Hz to a real footstep cadence (~1.5-2.4Hz).
+- **Flashlight**: press F to toggle (`FlashlightController.lua` sends the
+  request; `PlayerService.lua` owns the actual light). It's a real
+  server-owned `SpotLight` on the character's Head (`Config.Flashlight` for
+  range/angle/brightness/color) — toggled authoritatively server-side so
+  every other player sees your beam too, not just a client-only effect for
+  its owner. Off by default and reset (a fresh light, always off) on every
+  respawn. Especially useful during a blackout, when every ceiling fixture
+  nearby has gone dark.
 - **3 minigame stations** that require real attention and periodically ping
   every nearby monster while active (`MinigameService.lua` +
   `StarterPlayerScripts/Minigames/*`). Clearing all of them unlocks the exit
@@ -387,7 +428,7 @@ src/ServerScriptService/
   MonsterSpawner.lua                 Spawns one of every Config.Monsters entry
   MinigameService.lua                Station wiring, noise pulses, exit-unlock trigger
   ExitService.lua                    Exit door lock/unlock + escape-zone detection
-  PlayerService.lua                  Round state per player, catch/respawn/spectate/escape
+  PlayerService.lua                  Round state per player, catch/respawn/spectate/escape, flashlight toggle
   GameState.lua                      Waiting → Intermission → Playing → Results loop, Overtime trigger
 src/StarterPlayerScripts/
   Main.client.lua                    Boots all client controllers, each wrapped in pcall so one's error can't skip the rest
@@ -395,6 +436,7 @@ src/StarterPlayerScripts/
   CursorLock.lua                     Frees the mouse for clickable menus (fights the camera every frame)
   SprintController.lua               Shift-to-sprint
   ViewBobController.lua               Subtle first-person camera bob, scaled up while sprinting
+  FlashlightController.lua            Sends the F-key toggle request; the light itself lives server-side
   AmbienceController.lua             Store ambience loop, proximity heartbeat, round/exit/escape stingers
   JumpscareController.lua            Full-screen jumpscare on catch + catch/scream audio
   DeathController.lua                Death/respawn/spectate menu + escape banner

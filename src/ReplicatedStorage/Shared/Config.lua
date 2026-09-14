@@ -67,6 +67,11 @@ Config.Blackout = {
 Config.LightsOutRadius = 20
 Config.LightsOutGrace = 15
 
+-- Within this many studs of a chase target, MonsterAI:_canSee skips the
+-- facing-cone check -- a monster this close shouldn't lose track of
+-- someone just because its own facing lags its movement direction.
+Config.MeleeAwareRadius = 10
+
 Config.Round = {
 	MinPlayers = 1,
 	IntermissionTime = 15,
@@ -90,6 +95,16 @@ Config.Round = {
 Config.Player = {
 	WalkSpeed = 16,
 	SprintSpeed = 25,
+}
+
+-- Toggled with F (FlashlightController.lua). A real SpotLight on the
+-- character, toggled server-side, so everyone sees everyone else's beam --
+-- not just a client-only visual effect for its owner.
+Config.Flashlight = {
+	Range = 26,
+	Angle = 40, -- full cone angle in degrees (SpotLight.Angle), not a half-angle
+	Brightness = 3,
+	Color = Color3.fromRGB(255, 250, 220),
 }
 
 -- Global / UI / ambient sounds not tied to a specific monster. All default

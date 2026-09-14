@@ -15,6 +15,7 @@ local context = { player = player, playerGui = playerGui }
 local CONTROLLERS = {
 	"SprintController",
 	"ViewBobController",
+	"FlashlightController",
 	"AmbienceController",
 	"JumpscareController",
 	"DeathController",

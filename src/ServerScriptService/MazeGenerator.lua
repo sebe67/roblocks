@@ -685,6 +685,13 @@ function MazeGenerator.Generate()
 			accent.Name = "Accent"
 			accent.Anchored = true
 			accent.CanCollide = false
+			-- Purely a floor glow effect, but it's near-floor-level and
+			-- spans almost the entire station cell -- exactly the kind of
+			-- thing a monster's clearance spherecast could clip (same
+			-- category of bug as the Floors folder, which is excluded
+			-- entirely for this reason). CanCollide=false alone doesn't
+			-- stop a raycast/spherecast query from hitting it.
+			accent.CanQuery = false
 			accent.Size = Vector3.new(cellSize - 1, 0.15, cellSize - 1)
 			accent.CFrame = CFrame.new(center + Vector3.new(0, 0.1, 0))
 			accent.Material = Enum.Material.Neon

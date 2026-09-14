@@ -3,6 +3,26 @@
 -- nothing until required from here.
 
 local Players = game:GetService("Players")
+local PhysicsService = game:GetService("PhysicsService")
+
+-- Monsters and players physically colliding was never needed -- the catch
+-- is a Touched-event trigger (MonsterAI:_onTouch), not a physical block --
+-- and letting Roblox's rigid-body physics resolve the overlap between two
+-- CanCollide parts every frame a monster tries to walk into a player was
+-- exactly the "orbits around you before finally touching" bug: each
+-- frame's push-apart-and-reaim-at-center cycle can slide the monster
+-- sideways around the player's collision shape instead of ever
+-- registering contact. Touched still fires between non-colliding parts
+-- (it depends on CanTouch, not CanCollide), so disabling collision between
+-- these two groups only removes the physical shove -- catching still works
+-- exactly the same. Both groups still collide normally with Default (walls,
+-- floor, everything else), and registering an already-registered group is
+-- a harmless no-op.
+pcall(function()
+	PhysicsService:RegisterCollisionGroup("Monsters")
+	PhysicsService:RegisterCollisionGroup("Players")
+	PhysicsService:CollisionGroupSetCollidable("Monsters", "Players", false)
+end)
 
 local MazeGenerator = require(script.Parent.MazeGenerator)
 local StoreTheme = require(script.Parent.StoreTheme)
