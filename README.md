@@ -102,23 +102,28 @@ in Workspace. A totally blank new place works fine.
   frame" input, the same API a player's own WASD ultimately drives — via
   `_chaseDirectly` in `MonsterAI.lua`.
 
-  **Chase obstacle-avoidance is temporarily disabled.** Earlier versions
-  branched every single frame between this direct steering and a
-  `PathfindingService` fallback (via `Humanoid:MoveTo()`) depending on
-  whether a wall blocked the straight line, but the reported "wildly
-  left-right, sometimes backwards, overshooting past the player" chase
-  behavior persisted even after several rounds of tuning that fallback
-  condition (a spherecast for body width, excluding Floors/Ceiling from it,
-  etc.) — strong evidence the two movement APIs were fighting each other
-  frame-to-frame (`MoveTo` resets the humanoid's internal walk/turn state
-  on every call, which up close to a moving target can itself look like
-  flailing) rather than the fallback's *condition* being miscalibrated. So
-  for now, every monster except Thomas (who structurally can't fit through
-  doorways and so always needs actual pathfinding) ignores walls entirely
-  during Chase and just beelines for the player — confirming the core
-  steering is smooth on its own before layering obstacle-awareness back in
-  with a steering method that doesn't swap APIs mid-chase. Patrol/
-  Investigate/Search are unaffected and still path around walls normally.
+  When a wall blocks that straight line, it falls back to `PathfindingService`
+  waypoints — but critically, waypoint-following *also* steers with
+  `Humanoid:Move()` now (`_followCurrentPath`'s `useContinuousSteer`
+  argument), not `Humanoid:MoveTo()`. Chase never calls `MoveTo()` in any of
+  its sub-paths anymore. Earlier it branched every frame between direct
+  `Move()` and a `MoveTo()`-based path fallback depending on
+  `_hasClearPath`; if that raycast ever flickered true/false between
+  consecutive frames (plausible near a corner/doorway, or just geometry
+  noise), the monster would alternate between two APIs that manipulate the
+  humanoid's walk/turn state differently, which reads exactly like the
+  reported "wildly left-right, sometimes backwards, overshooting past the
+  player." Needing pathfinding no longer means switching APIs, only
+  switching what point that frame's `Move()` call aims at. Thomas (wideBody)
+  always takes the pathfinding path regardless of `_hasClearPath`, same as
+  before. Debugging this also turned up that the flailing was reported
+  worse for SpongeBob than other monsters despite all of them sharing this
+  exact chase code — the one per-frame difference was his `lightsOut` quirk
+  update running inline inside the same `Update()` call that drives
+  movement, so it's now been moved onto its own independent `task.spawn`
+  timer (see `_updateLightsOut`), guaranteeing it can never affect a
+  movement command's timing for that frame regardless of what it does
+  internally.
   Monsters are scattered at least `Config.Maze.MonsterSpawnExclusionCells`
   cells from the (now-central) spawn point both at server boot and again at
   the start of every round (`MonsterSpawner.RepositionAll`), so one can't

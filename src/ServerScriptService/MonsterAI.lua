@@ -200,6 +200,25 @@ function MonsterAI.new(def, maze)
 		self:_onTouch(hit)
 	end)
 
+	-- Runs independently of the shared movement Heartbeat -- see the long
+	-- comment on _updateLightsOut for why this quirk's bookkeeping must
+	-- never share a call with movement.
+	if def.quirk == "lightsOut" then
+		task.spawn(function()
+			while not self.destroyed do
+				task.wait(0.25)
+				if not self.paused then
+					local ok, err = pcall(function()
+						self:_updateLightsOut()
+					end)
+					if not ok then
+						warn(string.format("[MonsterAI] %s lightsOut error: %s", def.id, tostring(err)))
+					end
+				end
+			end
+		end)
+	end
+
 	table.insert(registry, self)
 	return self
 end
@@ -324,14 +343,21 @@ end
 -- Config.LightsOutGrace seconds after he's no longer near it (canceled if
 -- he comes back within range before that timer fires). Scans only the 3x3
 -- block of grid cells around his current cell rather than every fixture in
--- the store, and throttled to a few times a second -- plenty for something
--- that only needs to track "am I near this room's light," not per-frame.
-function MonsterAI:_updateLightsOut(now)
-	if now < (self.nextLightsOutCheck or 0) then
-		return
-	end
-	self.nextLightsOutCheck = now + 0.25
-
+-- the store, and only needs to run a few times a second -- plenty for
+-- something that only tracks "am I near this room's light," not per-frame.
+--
+-- Runs on its own task.spawn loop (started in MonsterAI.new), NOT from
+-- inside Update(): Update() runs on the single shared Heartbeat connection
+-- that drives every monster's movement every frame, so anything slow or
+-- (if a bug ever crept in here) error-prone sharing that same call would
+-- eat into -- or in the pcall-wrapped worst case, entirely skip -- that
+-- monster's movement command for the frame. Since SpongeBob was the one
+-- monster reported with noticeably worse chase movement than the others
+-- despite running the exact same chase code, and this quirk update was the
+-- one per-frame thing only he ran, putting it on a fully independent timer
+-- removes it as a suspect regardless of whether a concrete bug is ever
+-- found in it.
+function MonsterAI:_updateLightsOut()
 	local maze = self.maze
 	local fixturesFolder = maze.model:FindFirstChild("Fixtures")
 	if not fixturesFolder then
@@ -449,7 +475,16 @@ function MonsterAI:_moveAlongPath(waypoints)
 	self._lastCommandedPoint = nil
 end
 
-function MonsterAI:_followCurrentPath(dt)
+-- useContinuousSteer: Chase passes true so waypoint-following shares the
+-- exact same Humanoid:Move() call _chaseDirectly uses for the direct case,
+-- instead of Humanoid:MoveTo() -- so a chasing monster NEVER touches MoveTo
+-- in any of its sub-paths and can't alternate between the two APIs
+-- mid-chase (see the long comment in Update() for why that alternation was
+-- itself indistinguishable from -- and quite possibly the actual cause of
+-- -- the reported flailing). Patrol/Investigate/Search still pass nothing
+-- and keep using MoveTo, which is the right tool for a mostly-static
+-- destination you're not fighting a moving target toward.
+function MonsterAI:_followCurrentPath(dt, useContinuousSteer)
 	if not self.currentPath or not self.currentPath[self.pathIndex] then
 		return true
 	end
@@ -462,11 +497,13 @@ function MonsterAI:_followCurrentPath(dt)
 		end
 		targetPoint = self.currentPath[self.pathIndex]
 	end
-	-- Only issue a new MoveTo when the target waypoint actually changes --
-	-- calling Humanoid:MoveTo() every single frame (even at the same target)
-	-- repeatedly interrupts the humanoid's walk state and is what was
-	-- causing the stuttery/erratic-looking movement.
-	if self._lastCommandedPoint ~= targetPoint then
+	if useContinuousSteer then
+		self:_chaseDirectly(targetPoint)
+	elseif self._lastCommandedPoint ~= targetPoint then
+		-- Only issue a new MoveTo when the target waypoint actually changes --
+		-- calling Humanoid:MoveTo() every single frame (even at the same
+		-- target) repeatedly interrupts the humanoid's walk state and is
+		-- what was causing the stuttery/erratic-looking movement.
 		self.humanoid:MoveTo(targetPoint)
 		self._lastCommandedPoint = targetPoint
 	end
@@ -580,16 +617,17 @@ function MonsterAI:_updateGodChase(now)
 	self.humanoid.WalkSpeed = def.chaseSpeed * Config.Round.OvertimeSpeedMultiplier
 	self:_updateFootstepAudio()
 
-	-- Same temporary simplification as the normal chase case below: always
-	-- direct-steer except for Thomas, no per-frame branching on
-	-- _hasClearPath. See the long comment in Update() for why.
-	if def.quirk == "wideBody" then
+	-- Same unified-API approach as the normal chase case in Update(): only
+	-- Humanoid:Move() ever runs during chase, whether aiming at the player
+	-- directly or at a pathfinding waypoint, so there's no MoveTo()/Move()
+	-- alternation possible even if _hasClearPath flickers frame to frame.
+	if def.quirk == "wideBody" or not self:_hasClearPath(nearestRoot.Position) then
 		local pathExhausted = not self.currentPath or not self.currentPath[self.pathIndex]
 		if pathExhausted or now - self.lastPathTime > Config.Round.OvertimeRepathInterval then
 			self.lastPathTime = now
 			self:_moveAlongPath(self:_pathTo(nearestRoot.Position) or {})
 		end
-		self:_followCurrentPath(0)
+		self:_followCurrentPath(0, true)
 	else
 		self.currentPath = nil
 		self:_chaseDirectly(nearestRoot.Position)
@@ -602,9 +640,6 @@ function MonsterAI:Update(dt)
 	end
 
 	local now = os.clock()
-	if self.def.quirk == "lightsOut" then
-		self:_updateLightsOut(now)
-	end
 
 	if self.god then
 		self:_updateGodChase(now)
@@ -649,24 +684,20 @@ function MonsterAI:Update(dt)
 
 			self.humanoid.WalkSpeed = self:_applyQuirkSpeed(def.chaseSpeed)
 
-			-- TEMPORARY simplification, at your request: always steer
-			-- straight at the player's live position with Humanoid:Move(),
-			-- full stop -- no PathfindingService fallback for anyone except
-			-- Thomas (whose whole quirk is that he structurally can't fit
-			-- through doorways, so he always needed pathfinding regardless).
-			-- The previous version branched every single frame between this
-			-- direct Move() and a pathfinding/MoveTo() fallback based on
-			-- _hasClearPath -- if that raycast flickered true/false between
-			-- consecutive frames (very plausible near a doorway/corner, or
-			-- just from float-precision noise), the monster would alternate
-			-- between two APIs that manipulate the humanoid's walk state
-			-- differently, which reads exactly like the reported
-			-- left-right/backwards flailing. Removing the branch entirely
-			-- removes that possibility outright, so this doubles as the
-			-- test of whether that was the actual cause. Bringing
-			-- obstacle-awareness back (once this is confirmed smooth) needs
-			-- a steering method that doesn't flip APIs frame to frame.
-			if def.quirk == "wideBody" then
+			-- Obstacle-awareness is back, but restructured so chase NEVER
+			-- calls Humanoid:MoveTo() in any of its sub-paths -- only
+			-- Humanoid:Move(), whether aiming directly at the player or at
+			-- a pathfinding waypoint (_followCurrentPath's useContinuousSteer
+			-- argument). Earlier this branched every frame between a direct
+			-- Move() and a MoveTo()-based path fallback; those two APIs
+			-- manipulate the humanoid's walk/turn state differently, so if
+			-- _hasClearPath ever flickered true/false between consecutive
+			-- frames (plausible near a corner/doorway, or just geometry
+			-- noise), the resulting API alternation could itself look like
+			-- exactly the flailing that got reported. Needing pathfinding
+			-- at all no longer means switching APIs, only switching what
+			-- point this frame's Move() call aims at.
+			if def.quirk == "wideBody" or not self:_hasClearPath(root.Position) then
 				local pathExhausted = not self.currentPath or not self.currentPath[self.pathIndex]
 				if pathExhausted then
 					-- No path in flight at all right now -- e.g. we just lost
@@ -692,7 +723,7 @@ function MonsterAI:Update(dt)
 						self:_moveAlongPath(self:_pathTo(root.Position) or {})
 					end
 				end
-				self:_followCurrentPath(dt)
+				self:_followCurrentPath(dt, true)
 			else
 				self.currentPath = nil
 				self:_chaseDirectly(root.Position)
