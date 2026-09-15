@@ -1,11 +1,17 @@
 -- Debug-only free-fly for the /spectate and /back chat commands
 -- (Main.server.lua). The server (PlayerService:EnableNoclip/DisableNoclip)
--- only flips state -- makes the character invisible/intangible and sets
--- the "Flying" attribute -- it doesn't drive movement itself. This script
--- is what actually moves the character while "Flying" is true, by writing
--- camera-relative velocity straight onto the HumanoidRootPart every frame
--- (the Humanoid's own WalkSpeed-driven control is suspended by
--- PlatformStand while noclip is on, so there's nothing to fight over).
+-- only flips state -- makes the character invisible/intangible, sets the
+-- "Flying" attribute, and Anchors the HumanoidRootPart, which takes the
+-- whole rig out of physics entirely (no gravity, no collision response,
+-- nothing left for anything to fight). This script is what actually moves
+-- the character while "Flying" is true: it directly translates root.CFrame
+-- every frame by a camera-relative direction, since an Anchored part won't
+-- go anywhere on its own. An earlier version drove flight through
+-- AssemblyLinearVelocity with PlatformStand instead of Anchored, and that
+-- fought the PlatformStand ragdoll physics -- glitchy, and still capable of
+-- getting hung up on walls. Direct CFrame translation on an Anchored part
+-- has nothing to fight: no velocity, no collision resolution, so it goes
+-- exactly where it's told, through anything.
 
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -18,7 +24,7 @@ function NoclipController.Init(context)
 	local camera = workspace.CurrentCamera
 	local renderConn = nil
 
-	local function stepFlight()
+	local function stepFlight(dt)
 		local character = player.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart")
 		if not root then
@@ -48,7 +54,8 @@ function NoclipController.Init(context)
 		if move.Magnitude > 0 then
 			move = move.Unit
 		end
-		root.AssemblyLinearVelocity = move * Config.Noclip.FlySpeed
+
+		root.CFrame = root.CFrame + move * Config.Noclip.FlySpeed * dt
 	end
 
 	local function startFlying()
@@ -62,11 +69,6 @@ function NoclipController.Init(context)
 		if renderConn then
 			renderConn:Disconnect()
 			renderConn = nil
-		end
-		local character = player.Character
-		local root = character and character:FindFirstChild("HumanoidRootPart")
-		if root then
-			root.AssemblyLinearVelocity = Vector3.new()
 		end
 	end
 

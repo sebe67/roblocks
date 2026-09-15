@@ -105,20 +105,29 @@ in Workspace. A totally blank new place works fine.
   to head toward for a while instead of a random one (`ReceiveAlert`), so
   it's a variant of Patrol rather than its own state.
 
-  **Chase is deliberately simple right now, by request**: once chasing, a
-  monster always steers straight at the player's live position with
-  `Humanoid:Move()` — a continuous "here's my desired direction this
-  frame" input, the same API a player's own WASD ultimately drives —
-  completely ignoring walls and obstacles. No `PathfindingService`
-  fallback, no exception for Thomas. This is a deliberate reset to the
-  simplest possible version of chasing after several rounds where
-  obstacle-awareness layered on top of direct `Move()` steering kept
-  reintroducing its own problems (see below) — the point right now is
-  confirming the core steering itself reads as smooth in isolation before
-  anything else comes back. **Nothing in `MonsterAI.lua` calls
-  `Humanoid:MoveTo()` anymore** — Patrol still uses `PathfindingService`
-  (see below), but follows its waypoints with the same `Move()`-based
-  `_steerToward` primitive Chase uses, not `MoveTo()`.
+  **Movement itself is now fully kinematic — no Humanoid physics, no
+  momentum, at all.** Every monster's `HumanoidRootPart` is `Anchored`
+  (`createRig`), which takes its whole welded rig out of physics
+  simulation entirely: no gravity, no collision response, nothing external
+  that can ever push it off course. The one movement primitive,
+  `_faceAndMove(dt, desiredDir, speed, moveForward)`, does exactly two
+  things each frame: (1) turns `self.facing` toward `desiredDir` by at
+  most `TURN_RATE * dt` radians — never further, never all at once — and
+  (2) if `moveForward` is true, sets `root.CFrame` to the current position
+  plus `self.facing * speed * dt`, facing that same direction. Next
+  frame's position is *always* just last position plus this frame's
+  facing times this frame's `dt` — nothing but the facing direction itself
+  carries over between frames, which is the literal "a direction to face
+  in, and a move-forward function, but they don't always have to be
+  moving forward" this was rebuilt to. Chase calls it every frame with
+  `moveForward = true` and the live direction to the player, completely
+  ignoring walls and obstacles — no `PathfindingService` fallback, no
+  exception for Thomas. Patrol calls it once per waypoint the same way;
+  when there's no path yet (see below), it just doesn't call it at all
+  that frame, which is the "not always moving forward" case in practice.
+  **Nothing in `MonsterAI.lua` calls `Humanoid:Move()` or
+  `Humanoid:MoveTo()` anymore** — the `Humanoid` instance is still there
+  for its stats/animations, it's just no longer what moves anything.
 
   **Patrol** requests a route to a random point on the grid (or an alert
   location) via `PathfindingService` and walks its waypoints. Its
@@ -196,35 +205,32 @@ in Workspace. A totally blank new place works fine.
     a movement command's timing regardless of what it does internally.
   - Even alone in a room with nobody else nearby, a monster could still
     orbit a completely stationary player ~2 revolutions before finally
-    stopping. The real cause: Chase steers at the player's *exact* live
-    position every frame with only a 0.1-stud arrival tolerance, and
-    monster-vs-player collision is now disabled (previous bullet) — so
-    there's nothing physically stopping the monster once it's basically on
-    top of them, and it tries to walk straight through that exact point.
-    The root part is a real, momentum-carrying physics body, not a
-    kinematic teleport: the instant it overshoots, the direction back to
-    the (still very close) player swings through a huge angle in a single
-    frame, faster than its existing momentum can redirect to match — and
-    recomputing that swung-around heading every single frame while still
-    carrying speed from the old one is exactly the textbook "seek without
-    arrival" steering bug (a well-known failure mode in game AI: chasing a
-    point's *exact* position with no slowing/arrival radius overshoots and
-    circles instead of converging). It doesn't converge, it curls — an
-    orbit that tightens the closer it gets, matching "orbits ~2
-    revolutions, then stands still" once it finally bleeds off enough
-    speed. Since catching is a `Touched`-based proximity trigger, not a
-    walk-to-this-exact-point task, there was never a reason to keep
-    correcting that tightly that close: Chase (and Overtime's
-    `_updateGodChase`) now stop recomputing direction entirely once within
-    `CHASE_ARRIVE_RADIUS` (4 studs) of the target, letting its last real
-    heading carry it the rest of the way into contact instead of endlessly
-    re-aiming at a point it's already basically standing on.
+    stopping — sometimes freezing partway there. A first pass diagnosed
+    this as a "seek without arrival" overshoot (steering at the player's
+    *exact* live position every frame with a momentum-carrying physics
+    body, which can't redirect an existing velocity instantly when the
+    required bearing suddenly swings through a wide angle up close) and
+    fixed it by having Chase stop recomputing direction within a small
+    arrival radius. That held up worse than hoped: further testing still
+    found monsters parked and unmoving mid-Patrol facing a wall, a Chase
+    target frozen right in front of the player (the new arrival-radius
+    dead zone, entered while not quite lined up, with nothing left to
+    correct it), and the orbit itself still recurring. Rather than patch a
+    physics-momentum theory further, movement was rebuilt from scratch
+    with momentum removed as a category, not tuned around — see the fully
+    kinematic `_faceAndMove` system described above. It has no velocity to
+    carry between frames at all, so there's structurally nothing left that
+    *can* spiral into an orbit or get stuck mid-correction: the worst case
+    is turning in place for a frame or two, never curling off course.
 
   Thomas (wideBody) no longer gets a special exception during Chase — he
   now blindly beelines like everyone else, which temporarily means he can
-  attempt to walk into a doorway too narrow for him mid-chase (he'll just
-  be physically blocked by the wall rather than routing around it) until
-  obstacle-awareness returns for everyone.
+  aim straight through a doorway too narrow for him mid-chase. Since
+  movement is now kinematic rather than physics-driven (previous
+  paragraph), that's no longer even a physical wall-block — an
+  Anchored, directly-`CFrame`-set part has no collision response, so
+  Chase walking "through" a wall now means exactly that, visibly clipping
+  through it, until obstacle-awareness returns for everyone.
 
   Monsters are scattered at least `Config.Maze.MonsterSpawnExclusionCells`
   cells from the (now-central) spawn point both at server boot and again at
@@ -234,9 +240,10 @@ in Workspace. A totally blank new place works fine.
   **Temporary testing aid:** every monster has a small "PATROL"/"CHASE" tag
   floating just above its nametag (`createRig`'s `stateTag`), always
   matching `self.state` exactly since both are only ever changed together
-  through `MonsterAI:_setState`. Meant to make it obvious at a glance which
-  state a monster is actually in while chasing behavior is still being
-  tuned — remove it once that's no longer needed.
+  through `MonsterAI:_setState` — light blue for Patrol, red for Chase, so
+  the two are easy to tell apart at a glance. Meant to make it obvious
+  which state a monster is actually in while chasing behavior is still
+  being tuned — remove it once that's no longer needed.
 - **Sprinting**: hold Shift, infinite, no stamina bar (`SprintController.lua`).
 - **View bob** (`ViewBobController.lua`): a subtle first-person camera bob
   while moving, scaled up a bit while sprinting — cycles per stud traveled
@@ -263,9 +270,10 @@ in Workspace. A totally blank new place works fine.
   `FlashlightAim` part welded to `Head` with a `Motor6D` (inherits yaw
   automatically), and `FlashlightController.lua` reports the local
   camera's pitch to the server every 0.1s, which rewrites that `Motor6D`'s
-  `C0` (clamped to `Config.Flashlight.MaxPitch`, 65°) — a live constraint,
-  not a one-time weld, so it keeps tracking every frame with no server
-  loop needed.
+  `C0` (clamped to `Config.Flashlight.MaxPitch`, 89° — short of the 90°
+  gimbal-degenerate case of looking exactly straight up/down, so this is
+  full freedom in practice) — a live constraint, not a one-time weld, so
+  it keeps tracking every frame with no server loop needed.
 - **3 minigame stations** that require real attention and periodically ping
   every nearby monster while active (`MinigameService.lua` +
   `StarterPlayerScripts/Minigames/*`). Clearing all of them unlocks the exit
@@ -410,6 +418,19 @@ check runs, so no monster-side changes were needed. Type `/back` to return
 to normal (visible, collidable, walking control restored). Also wired up in
 `Main.server.lua`, same "open to any player for now, gate before this goes
 public" caveat as every other debug command here.
+
+The first version of this drove flight with `AssemblyLinearVelocity` and
+`Humanoid.PlatformStand = true`, and it was glitchy and still didn't
+reliably clip through walls — `PlatformStand` ragdolls the rig (every
+limb's joint goes loose) rather than just suspending walk control, and
+that ragdoll physics fought our velocity writes to the root every frame.
+Now `EnableNoclip` (`PlayerService.lua`) sets `HumanoidRootPart.Anchored
+= true` instead, which — like the monster movement rebuild above — takes
+the *entire* welded rig out of physics simulation: no gravity, no ragdoll,
+no collision response possible, nothing left to fight. With the root
+Anchored, `NoclipController.lua` becomes the only thing moving the
+character, translating `root.CFrame` directly every frame — nothing to
+glitch, and nothing for a wall to stop.
 
 Adding a fourth station is: build its client module under
 `StarterPlayerScripts/Minigames/`, register it in

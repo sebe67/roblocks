@@ -174,13 +174,25 @@ end
 -- -- that one locks your camera onto another alive player, this one lets
 -- your own character fly through walls. Invisible+intangible is just
 -- CanCollide=false/Transparency=1 on every part (same stash-and-restore
--- shape as _hideCharacter, kept separate since this one must NOT anchor --
--- the character still needs to physically move); "can't be seen/chased/
--- touched by monsters" reuses the existing Invulnerable attribute, which
--- MonsterAI's playersToCheck() already filters out before any sight or
--- catch check ever runs. The actual flight movement itself is entirely
--- client-side (NoclipController.lua reacting to the Flying attribute) --
--- this just puts the character into a state that movement can act on.
+-- shape as _hideCharacter); "can't be seen/chased/touched by monsters"
+-- reuses the existing Invulnerable attribute, which MonsterAI's
+-- playersToCheck() already filters out before any sight or catch check
+-- ever runs.
+--
+-- The first version of this drove flight by setting AssemblyLinearVelocity
+-- every frame with humanoid.PlatformStand = true, and it was glitchy and
+-- still didn't reliably pass through walls. Root cause: PlatformStand
+-- doesn't just suspend walk control, it ragdolls the rig (every limb's
+-- joint goes loose), and our velocity writes to only the root were
+-- fighting that ragdoll physics -- plus a real, unanchored, gravity-
+-- affected body can still collide with things through other means even
+-- with CanCollide off on its own parts (getting shoved by whatever it's
+-- overlapping). Anchoring the HumanoidRootPart instead removes the WHOLE
+-- rig from physics simulation entirely -- no gravity, no ragdoll, no
+-- collision response possible, nothing to fight -- exactly the same fix
+-- as the monster movement rebuild (MonsterAI.lua's _faceAndMove). With the
+-- root Anchored, NoclipController.lua becomes the only thing moving the
+-- character at all, by setting its CFrame directly every frame.
 function PlayerService:EnableNoclip(player)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -202,12 +214,8 @@ function PlayerService:EnableNoclip(player)
 	end
 	self._noclipStash[player] = stash
 
-	-- PlatformStand suspends the Humanoid's own ground-walk control so it
-	-- doesn't fight NoclipController's direct velocity writes; it doesn't
-	-- disable physics, which is exactly what lets those velocity writes
-	-- actually move the character freely in all 3 axes.
-	humanoid.PlatformStand = true
-	root.AssemblyLinearVelocity = Vector3.zero
+	humanoid.PlatformStand = false
+	root.Anchored = true
 
 	player:SetAttribute("Invulnerable", true)
 	player:SetAttribute("Flying", true)
@@ -228,13 +236,9 @@ function PlayerService:DisableNoclip(player)
 	end
 	self._noclipStash[player] = nil
 
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	local root = character:FindFirstChild("HumanoidRootPart")
-	if humanoid then
-		humanoid.PlatformStand = false
-	end
 	if root then
-		root.AssemblyLinearVelocity = Vector3.zero
+		root.Anchored = false
 	end
 
 	player:SetAttribute("Invulnerable", false)

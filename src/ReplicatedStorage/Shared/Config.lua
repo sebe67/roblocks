@@ -114,8 +114,15 @@ Config.Flashlight = {
 	Color = Color3.fromRGB(255, 250, 220),
 	-- How far up/down (degrees) the beam can tilt from level, clamped
 	-- server-side against the pitch the client reports (PlayerService's
-	-- FlashlightAim Motor6D) -- see FlashlightController.lua.
-	MaxPitch = 65,
+	-- FlashlightAim Motor6D) -- see FlashlightController.lua. 89, not 90,
+	-- only to dodge the gimbal-degenerate case of looking exactly straight
+	-- up/down -- this is "full freedom, wherever you're looking" in
+	-- practice. Yaw needs no separate handling: the round locks the camera
+	-- to first-person the whole time the flashlight is usable, and Roblox
+	-- always keeps the character's own yaw matched to the camera's in that
+	-- mode, so Head (and FlashlightAim, welded to it) already turns
+	-- left/right with your look direction for free.
+	MaxPitch = 89,
 }
 
 -- Global / UI / ambient sounds not tied to a specific monster. All default

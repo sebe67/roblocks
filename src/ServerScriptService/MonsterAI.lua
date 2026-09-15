@@ -26,26 +26,10 @@ local overtimeActive = false
 -- of the target it's chasing -- see the file header and Update().
 local CHASE_GIVEUP_TIME = 5
 
--- Once within this many studs of the player, Chase (and Overtime's
--- _updateGodChase) stops recomputing a fresh direction every frame and
--- just holds its last heading. Why: with monster-vs-player collision
--- disabled (Main.server.lua) there's nothing physically stopping the
--- monster at the player's edge anymore, so steering at their exact center
--- every single frame lets it walk straight through that point. The root
--- part is a real, momentum-carrying physics body, not a kinematic
--- teleport -- once it overshoots, the direction back to the (still very
--- close) player swings through a huge angle in one frame, and it can't
--- instantly redirect its existing momentum to match. Recomputing that
--- swung-around heading every frame while still carrying speed from the old
--- one is exactly a textbook "seek without arrival" steering bug: it
--- doesn't converge, it curls -- an orbit that tightens the closer it gets,
--- which matches "orbits ~2 revolutions, then stands still" once it finally
--- bleeds off enough speed to stop. Catching is a Touched-based proximity
--- trigger, not a precise walk-to-this-exact-point task, so there was never
--- a reason to keep correcting this tightly this close -- letting the last
--- real heading carry it the rest of the way in removes the
--- every-frame-overshoot-and-recompute cycle that caused it.
-local CHASE_ARRIVE_RADIUS = 4
+-- Max turning speed for _faceAndMove below -- see that function's comment
+-- for why this whole movement model no longer needs an "arrival radius"
+-- hack the way the old Humanoid:Move()-based one did.
+local TURN_RATE = math.rad(300)
 
 function MonsterAI.SetCatchHandler(fn)
 	catchHandler = fn
@@ -128,6 +112,16 @@ local function createRig(def)
 	-- it had already reached -- see the collision-group setup in
 	-- Main.server.lua for why that's disabled and why Touched still works.
 	root.CollisionGroup = "Monsters"
+	-- Anchored: movement is now fully driven by _faceAndMove setting
+	-- root.CFrame directly every frame (see that function's comment) --
+	-- there's no Humanoid:Move()/WalkSpeed physics involved anymore, so
+	-- there's nothing left for gravity or collision response to apply to.
+	-- Anchoring the HumanoidRootPart takes the WHOLE welded rig (head
+	-- included) out of physics simulation entirely: no falling, no
+	-- get-shoved-by-a-wall knockback, no possible source of momentum ever
+	-- again. Touched still fires normally for Anchored parts, so catching
+	-- (MonsterAI:_onTouch) is unaffected.
+	root.Anchored = true
 	root.Parent = model
 	model.PrimaryPart = root
 
@@ -274,7 +268,13 @@ function MonsterAI:_setState(state)
 	end
 	self.state = state
 	if self.stateLabel then
-		self.stateLabel.Text = state == "Chase" and "CHASE" or "PATROL"
+		if state == "Chase" then
+			self.stateLabel.Text = "CHASE"
+			self.stateLabel.TextColor3 = Color3.fromRGB(255, 60, 60)
+		else
+			self.stateLabel.Text = "PATROL"
+			self.stateLabel.TextColor3 = Color3.fromRGB(140, 220, 255)
+		end
 	end
 end
 
@@ -520,10 +520,9 @@ end
 
 -- Walks the current waypoint list, advancing to the next one once within 3
 -- studs of the current target so the monster never needs to precisely
--- "arrive" anywhere. Steers with _steerToward (Humanoid:Move()) the same as
--- every other kind of movement in this file -- see _steerToward's comment
--- for why nothing here ever calls Humanoid:MoveTo() anymore.
-function MonsterAI:_followCurrentPath()
+-- "arrive" anywhere. Moves with _faceAndMove, same as every other kind of
+-- movement in this file.
+function MonsterAI:_followCurrentPath(dt, speed)
 	if not self.currentPath or not self.currentPath[self.pathIndex] then
 		return true
 	end
@@ -536,7 +535,7 @@ function MonsterAI:_followCurrentPath()
 		end
 		targetPoint = self.currentPath[self.pathIndex]
 	end
-	self:_steerToward(targetPoint)
+	self:_faceAndMove(dt, targetPoint - self.root.Position, speed, true)
 	return false
 end
 
@@ -583,30 +582,54 @@ function MonsterAI:_applyQuirkSpeed(baseSpeed)
 	return baseSpeed
 end
 
--- The ONE movement primitive for every monster in every state: turns
--- toward targetPos (a live player position or a pathfinding waypoint, it
--- doesn't care which) and steers that way this frame, via Humanoid:Move()
--- -- a per-frame "here's my desired direction," exactly like a player's own
--- WASD input. Nothing in this file calls Humanoid:MoveTo() anymore.
---
--- MoveTo is a one-shot "walk to this exact waypoint and stop" command, and
--- every state (Patrol, Investigate, Search, Chase) used to call it once per
--- frame toward its own kind of constantly-shifting target -- a fresh random
--- patrol point, a moving player, whatever. Each call resets the humanoid's
--- internal walk/turn state, and that reset is where the flailing was really
--- coming from: it wasn't isolated to chasing a moving player (recalling it
--- toward player was only where it was easiest to notice) -- it happened to
--- every monster, in every state, including plain Patrol with nothing to
--- chase at all, exactly as reported. Move() has none of that: it just sets
--- a desired direction each frame and lets the humanoid's normal turn/walk
--- physics carry it smoothly, so a moving target (or a changing waypoint)
--- never needs a state reset to follow.
-function MonsterAI:_steerToward(targetPos)
-	local toTarget = targetPos - self.root.Position
-	toTarget = Vector3.new(toTarget.X, 0, toTarget.Z)
-	if toTarget.Magnitude > 0.1 then
-		self.humanoid:Move(toTarget.Unit)
+-- Rotates a flat (Y=0) unit vector currentDir toward desiredDir by at most
+-- maxRadians, and returns the result -- never further, never all at once.
+-- Pure math, no physics: given the same two directions and the same
+-- maxRadians, this always returns the same answer, with no memory of
+-- velocity or where either monster was a frame ago.
+local function rotateTowards(currentDir, desiredDir, maxRadians)
+	desiredDir = Vector3.new(desiredDir.X, 0, desiredDir.Z)
+	if desiredDir.Magnitude < 0.01 then
+		return currentDir
 	end
+	desiredDir = desiredDir.Unit
+	if currentDir.Magnitude < 0.01 then
+		return desiredDir
+	end
+	currentDir = currentDir.Unit
+	local angle = math.acos(math.clamp(currentDir:Dot(desiredDir), -1, 1))
+	if angle <= maxRadians then
+		return desiredDir
+	end
+	local blended = CFrame.lookAt(Vector3.new(), currentDir):Lerp(CFrame.lookAt(Vector3.new(), desiredDir), maxRadians / angle)
+	return blended.LookVector
+end
+
+-- The ONE movement primitive for every monster in every state, replacing
+-- the old Humanoid:Move()-based _steerToward. At your request, this has no
+-- momentum of any kind: it doesn't touch Humanoid or physics velocity at
+-- all (the root is Anchored -- see createRig), it just (1) turns
+-- self.facing toward desiredDir by at most TURN_RATE * dt radians this
+-- frame, then (2) if moveForward is true, sets root.CFrame to the current
+-- position plus self.facing * speed * dt, facing that same direction.
+-- Position next frame is ALWAYS last position + this frame's facing * this
+-- frame's dt -- nothing carries over except the facing direction itself,
+-- which is exactly the "a direction to face in, and a move forward
+-- function, but they don't always have to be moving forward" you asked
+-- for. Since there's no velocity to carry through a sudden change in
+-- bearing, there's nothing left that CAN spiral into an orbit the way the
+-- old momentum-carrying physics body did when it overshot a target and had
+-- to fight its own existing motion to correct -- the worst case now is
+-- just turning in place for a frame or two, never curling off course.
+function MonsterAI:_faceAndMove(dt, desiredDir, speed, moveForward)
+	local currentFacing = self.facing or Vector3.new(self.root.CFrame.LookVector.X, 0, self.root.CFrame.LookVector.Z)
+	self.facing = rotateTowards(currentFacing, desiredDir, TURN_RATE * dt)
+
+	local position = self.root.Position
+	if moveForward then
+		position = position + self.facing * speed * dt
+	end
+	self.root.CFrame = CFrame.lookAt(position, position + self.facing)
 end
 
 function MonsterAI:_updateFootstepAudio()
@@ -630,7 +653,7 @@ end
 -- Same simple, unconditional direct steering as the normal Chase case
 -- below -- no obstacle awareness, no exception for Thomas either, per your
 -- call to isolate the steering itself for now.
-function MonsterAI:_updateGodChase()
+function MonsterAI:_updateGodChase(dt)
 	local def = self.def
 	local nearestPlayer, nearestRoot, nearestDist
 	for _, entry in ipairs(playersToCheck()) do
@@ -646,13 +669,9 @@ function MonsterAI:_updateGodChase()
 	end
 
 	self.target = nearestPlayer.Character
-	self.humanoid.WalkSpeed = def.chaseSpeed * Config.Round.OvertimeSpeedMultiplier
 	self:_updateFootstepAudio()
 	self.currentPath = nil
-	local flatDist = (Vector3.new(nearestRoot.Position.X, 0, nearestRoot.Position.Z) - Vector3.new(self.root.Position.X, 0, self.root.Position.Z)).Magnitude
-	if flatDist > CHASE_ARRIVE_RADIUS then
-		self:_steerToward(nearestRoot.Position)
-	end
+	self:_faceAndMove(dt, nearestRoot.Position - self.root.Position, def.chaseSpeed * Config.Round.OvertimeSpeedMultiplier, true)
 end
 
 -- Exactly two states, Patrol and Chase, and they can't interfere with each
@@ -662,14 +681,12 @@ end
 -- out of one state and into a muddled third condition.
 --
 -- Chase itself is deliberately simple right now, at your request: once
--- chasing, always steer straight at the player's live position with
--- Humanoid:Move(), completely ignoring walls/obstacles. No
+-- chasing, always face+move straight at the player's live position
+-- (_faceAndMove), completely ignoring walls/obstacles. No
 -- PathfindingService fallback, no exception for Thomas -- this is a
 -- reset back to the simplest possible version of chasing, to confirm the
 -- underlying steering itself reads as smooth before any obstacle-awareness
--- comes back (a version of that layered on top of direct Move() steering
--- caused more problems than it solved across several rounds of tuning).
--- CHASE_GIVEUP_TIME and CHASE_ARRIVE_RADIUS are declared near the top of
+-- comes back. CHASE_GIVEUP_TIME and TURN_RATE are declared near the top of
 -- this file (both _updateGodChase above and Update below need them).
 
 function MonsterAI:Update(dt)
@@ -680,7 +697,7 @@ function MonsterAI:Update(dt)
 	local now = os.clock()
 
 	if self.god then
-		self:_updateGodChase()
+		self:_updateGodChase(dt)
 		return
 	end
 
@@ -722,12 +739,8 @@ function MonsterAI:Update(dt)
 				self.target = nil
 				self.currentPath = nil
 			else
-				self.humanoid.WalkSpeed = self:_applyQuirkSpeed(def.chaseSpeed)
 				self.currentPath = nil
-				local flatDist = (Vector3.new(root.Position.X, 0, root.Position.Z) - Vector3.new(self.root.Position.X, 0, self.root.Position.Z)).Magnitude
-				if flatDist > CHASE_ARRIVE_RADIUS then
-					self:_steerToward(root.Position)
-				end
+				self:_faceAndMove(dt, root.Position - self.root.Position, self:_applyQuirkSpeed(def.chaseSpeed), true)
 			end
 		else
 			self:_setState("Patrol")
@@ -741,7 +754,6 @@ function MonsterAI:Update(dt)
 	-- minigame station running, Dora's callout) just swaps in a specific
 	-- destination here for a while instead of a random one; it never
 	-- becomes a different state.
-	self.humanoid.WalkSpeed = def.patrolSpeed
 	local destination
 	if self.investigatePos and now < (self.investigateUntil or 0) then
 		destination = self.investigatePos
@@ -750,7 +762,14 @@ function MonsterAI:Update(dt)
 		destination = self:_randomPatrolTarget()
 	end
 	self:_ensurePath(destination)
-	local reachedEnd = self:_followCurrentPath()
+	-- If PathfindingService couldn't find a route (bad luck on the random
+	-- cell, or a genuinely unreachable one), currentPath is empty and
+	-- _followCurrentPath returns true immediately without calling
+	-- _faceAndMove at all -- the monster just doesn't move this frame
+	-- rather than facing/walking into nothing, and _ensurePath's 1-second
+	-- retry throttle tries a fresh destination shortly after. This is the
+	-- "they don't always have to be moving forward" case.
+	local reachedEnd = self:_followCurrentPath(dt, def.patrolSpeed)
 	if reachedEnd then
 		self.currentPath = nil
 		self.investigatePos = nil
@@ -775,7 +794,10 @@ end
 function MonsterAI:SetPaused(paused)
 	self.paused = paused
 	if paused then
-		self.humanoid:MoveTo(self.root.Position)
+		-- Nothing to cancel anymore: Update() (the only thing that ever
+		-- moves this monster) already bails out immediately while paused,
+		-- and there's no Humanoid:Move()/MoveTo command left in flight to
+		-- stop the way the old physics-driven movement needed.
 		if self.footstepSound then
 			self.footstepSound:Stop()
 		end
