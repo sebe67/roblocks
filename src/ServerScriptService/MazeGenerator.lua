@@ -304,8 +304,18 @@ function MazeGenerator.Generate()
 			ceiling.Anchored = true
 			ceiling.Size = Vector3.new(cellSize, 1, cellSize)
 			ceiling.CFrame = CFrame.new(center + Vector3.new(0, wallHeight + 0.5, 0))
-			ceiling.Material = Enum.Material.Metal
-			ceiling.Color = Color3.fromRGB(40, 40, 44)
+			-- Was Metal at (40,40,44) -- a near-black surface with Metal's
+			-- tight, angle-dependent specular response barely shows any
+			-- visible brightness increase from a spotlight at all, which is
+			-- what "the flashlight doesn't work on the roof" actually was:
+			-- the light genuinely was hitting it, there just wasn't enough
+			-- reflectance for a person to see the difference. Concrete
+			-- (matching Floor's material) gives the same even, broad
+			-- diffuse response Floor already gets a flashlight boost from,
+			-- and the color's brightened enough to make that boost visible
+			-- while staying dim/industrial overall.
+			ceiling.Material = Enum.Material.Concrete
+			ceiling.Color = Color3.fromRGB(58, 58, 65)
 			ceiling.Parent = folders.Ceiling
 
 			local isWorking = math.random(1, Config.Lighting.FixtureFrequency) == 1

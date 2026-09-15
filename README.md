@@ -273,7 +273,13 @@ in Workspace. A totally blank new place works fine.
   `C0` (clamped to `Config.Flashlight.MaxPitch`, 89° — short of the 90°
   gimbal-degenerate case of looking exactly straight up/down, so this is
   full freedom in practice) — a live constraint, not a one-time weld, so
-  it keeps tracking every frame with no server loop needed.
+  it keeps tracking every frame with no server loop needed. Ceiling parts
+  (`MazeGenerator.lua`) used to be near-black `Metal` (`(40,40,44)`) —
+  the light genuinely reached them, but Metal's tight, angle-dependent
+  specular response on a surface that dark left no visible brightness
+  increase to actually see, which is what "doesn't work on the roof"
+  turned out to be. Now `Concrete` at `(58,58,65)`, matching Floor's
+  already-working diffuse response, so the beam reads clearly on both.
 - **3 minigame stations** that require real attention and periodically ping
   every nearby monster while active (`MinigameService.lua` +
   `StarterPlayerScripts/Minigames/*`). Clearing all of them unlocks the exit
