@@ -16,6 +16,7 @@ local CONTROLLERS = {
 	"SprintController",
 	"ViewBobController",
 	"FlashlightController",
+	"NoclipController",
 	"AmbienceController",
 	"JumpscareController",
 	"DeathController",

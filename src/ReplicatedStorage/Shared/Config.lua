@@ -97,6 +97,13 @@ Config.Player = {
 	SprintSpeed = 25,
 }
 
+-- /spectate and /back debug chat commands (Main.server.lua, PlayerService,
+-- NoclipController.lua) -- free-fly noclip for testing, not a real gameplay
+-- feature.
+Config.Noclip = {
+	FlySpeed = 50,
+}
+
 -- Toggled with F (FlashlightController.lua). A real SpotLight on the
 -- character, toggled server-side, so everyone sees everyone else's beam --
 -- not just a client-only visual effect for its owner.
@@ -105,6 +112,10 @@ Config.Flashlight = {
 	Angle = 40, -- full cone angle in degrees (SpotLight.Angle), not a half-angle
 	Brightness = 3,
 	Color = Color3.fromRGB(255, 250, 220),
+	-- How far up/down (degrees) the beam can tilt from level, clamped
+	-- server-side against the pitch the client reports (PlayerService's
+	-- FlashlightAim Motor6D) -- see FlashlightController.lua.
+	MaxPitch = 65,
 }
 
 -- Global / UI / ambient sounds not tied to a specific monster. All default

@@ -93,6 +93,22 @@ local function onChatted(player, message)
 			StoreTheme.TriggerBlackout(maze)
 		end)
 		print(string.format("[Debug] %s triggered /blackout.", player.Name))
+		return
+	end
+
+	-- /spectate and /back -- free-fly noclip for testing: invisible,
+	-- intangible, and invulnerable to monsters (see
+	-- PlayerService:EnableNoclip/DisableNoclip), so you can fly anywhere
+	-- to check on things without being seen, chased, or caught.
+	if lower:match("^/spectate%s*$") then
+		local ok = playerService:EnableNoclip(player)
+		print(string.format("[Debug] %s used /spectate -- %s", player.Name, ok and "OK" or "no character to spectate with"))
+		return
+	end
+	if lower:match("^/back%s*$") then
+		local ok = playerService:DisableNoclip(player)
+		print(string.format("[Debug] %s used /back -- %s", player.Name, ok and "OK" or "wasn't spectating"))
+		return
 	end
 end
 

@@ -194,6 +194,31 @@ in Workspace. A totally blank new place works fine.
     between his chase and everyone else's — so it now runs on its own
     independent `task.spawn` timer (`_updateLightsOut`), unable to affect
     a movement command's timing regardless of what it does internally.
+  - Even alone in a room with nobody else nearby, a monster could still
+    orbit a completely stationary player ~2 revolutions before finally
+    stopping. The real cause: Chase steers at the player's *exact* live
+    position every frame with only a 0.1-stud arrival tolerance, and
+    monster-vs-player collision is now disabled (previous bullet) — so
+    there's nothing physically stopping the monster once it's basically on
+    top of them, and it tries to walk straight through that exact point.
+    The root part is a real, momentum-carrying physics body, not a
+    kinematic teleport: the instant it overshoots, the direction back to
+    the (still very close) player swings through a huge angle in a single
+    frame, faster than its existing momentum can redirect to match — and
+    recomputing that swung-around heading every single frame while still
+    carrying speed from the old one is exactly the textbook "seek without
+    arrival" steering bug (a well-known failure mode in game AI: chasing a
+    point's *exact* position with no slowing/arrival radius overshoots and
+    circles instead of converging). It doesn't converge, it curls — an
+    orbit that tightens the closer it gets, matching "orbits ~2
+    revolutions, then stands still" once it finally bleeds off enough
+    speed. Since catching is a `Touched`-based proximity trigger, not a
+    walk-to-this-exact-point task, there was never a reason to keep
+    correcting that tightly that close: Chase (and Overtime's
+    `_updateGodChase`) now stop recomputing direction entirely once within
+    `CHASE_ARRIVE_RADIUS` (4 studs) of the target, letting its last real
+    heading carry it the rest of the way into contact instead of endlessly
+    re-aiming at a point it's already basically standing on.
 
   Thomas (wideBody) no longer gets a special exception during Chase — he
   now blindly beelines like everyone else, which temporarily means he can
@@ -205,6 +230,13 @@ in Workspace. A totally blank new place works fine.
   cells from the (now-central) spawn point both at server boot and again at
   the start of every round (`MonsterSpawner.RepositionAll`), so one can't
   end up camping the entrance between rounds.
+
+  **Temporary testing aid:** every monster has a small "PATROL"/"CHASE" tag
+  floating just above its nametag (`createRig`'s `stateTag`), always
+  matching `self.state` exactly since both are only ever changed together
+  through `MonsterAI:_setState`. Meant to make it obvious at a glance which
+  state a monster is actually in while chasing behavior is still being
+  tuned — remove it once that's no longer needed.
 - **Sprinting**: hold Shift, infinite, no stamina bar (`SprintController.lua`).
 - **View bob** (`ViewBobController.lua`): a subtle first-person camera bob
   while moving, scaled up a bit while sprinting — cycles per stud traveled
@@ -219,12 +251,21 @@ in Workspace. A totally blank new place works fine.
   down from ~7Hz to a real footstep cadence (~1.5-2.4Hz).
 - **Flashlight**: press F to toggle (`FlashlightController.lua` sends the
   request; `PlayerService.lua` owns the actual light). It's a real
-  server-owned `SpotLight` on the character's Head (`Config.Flashlight` for
-  range/angle/brightness/color) — toggled authoritatively server-side so
-  every other player sees your beam too, not just a client-only effect for
-  its owner. Off by default and reset (a fresh light, always off) on every
-  respawn. Especially useful during a blackout, when every ceiling fixture
-  nearby has gone dark.
+  server-owned `SpotLight` (`Config.Flashlight` for range/angle/
+  brightness/color) — toggled authoritatively server-side so every other
+  player sees your beam too, not just a client-only effect for its owner.
+  Off by default and reset (a fresh light, always off) on every respawn.
+  Especially useful during a blackout, when every ceiling fixture nearby
+  has gone dark. Tracks camera pitch (up/down), not just facing
+  (left/right): a `Head`'s own `CFrame` only ever turns with the
+  character's yaw, never with camera pitch, so a light parented straight
+  to it could only aim level. The light instead lives on a small
+  `FlashlightAim` part welded to `Head` with a `Motor6D` (inherits yaw
+  automatically), and `FlashlightController.lua` reports the local
+  camera's pitch to the server every 0.1s, which rewrites that `Motor6D`'s
+  `C0` (clamped to `Config.Flashlight.MaxPitch`, 65°) — a live constraint,
+  not a one-time weld, so it keeps tracking every frame with no server
+  loop needed.
 - **3 minigame stations** that require real attention and periodically ping
   every nearby monster while active (`MinigameService.lua` +
   `StarterPlayerScripts/Minigames/*`). Clearing all of them unlocks the exit
@@ -359,6 +400,17 @@ active round to skip straight to Overtime. It's wired up in
 currently open to any player — fine for testing, but gate it (e.g. to
 specific `UserId`s) before this ever goes public.
 
+**Free-fly noclip for testing:** type `/spectate` in chat to go invisible
+and intangible and fly anywhere — through walls, across the whole map —
+with WASD (camera-relative) + Space/LeftCtrl for up/down
+(`NoclipController.lua`). Monsters can't see, chase, or touch you while
+it's active: it sets the same `Invulnerable` attribute
+`MonsterAI.playersToCheck()` already filters out before any sight or catch
+check runs, so no monster-side changes were needed. Type `/back` to return
+to normal (visible, collidable, walking control restored). Also wired up in
+`Main.server.lua`, same "open to any player for now, gate before this goes
+public" caveat as every other debug command here.
+
 Adding a fourth station is: build its client module under
 `StarterPlayerScripts/Minigames/`, register it in
 `MinigameController.lua`'s `GAMES` table, and add an entry to
@@ -432,14 +484,14 @@ src/ReplicatedStorage/Shared/
   Net.lua                            Lazy RemoteEvent/RemoteFunction lookup helper
   SoundKit.lua                       Play2D/loop3D/playAt sound helpers (safe no-op on empty SoundId)
 src/ServerScriptService/
-  Main.server.lua                    Boots everything, wires services together, /godmode chat command
+  Main.server.lua                    Boots everything, wires services together, /godmode /spectate /back /light /blackout chat commands
   MazeGenerator.lua                  Room partitioning + doorway/hallway connectors + color zones + stations + exit
   StoreTheme.lua                     Lighting/atmosphere + dead-fixture flicker loop
   MonsterAI.lua                      Per-monster state machine + Overtime godmode + placeholder rig + monster audio
   MonsterSpawner.lua                 Spawns one of every Config.Monsters entry
   MinigameService.lua                Station wiring, noise pulses, exit-unlock trigger
   ExitService.lua                    Exit door lock/unlock + escape-zone detection
-  PlayerService.lua                  Round state per player, catch/respawn/spectate/escape, flashlight toggle
+  PlayerService.lua                  Round state per player, catch/respawn/spectate/escape, flashlight toggle+aim, noclip
   GameState.lua                      Waiting → Intermission → Playing → Results loop, Overtime trigger
 src/StarterPlayerScripts/
   Main.client.lua                    Boots all client controllers, each wrapped in pcall so one's error can't skip the rest
@@ -447,7 +499,8 @@ src/StarterPlayerScripts/
   CursorLock.lua                     Frees the mouse for clickable menus (fights the camera every frame)
   SprintController.lua               Shift-to-sprint
   ViewBobController.lua               Subtle first-person camera bob, scaled up while sprinting
-  FlashlightController.lua            Sends the F-key toggle request; the light itself lives server-side
+  FlashlightController.lua            Sends the F-key toggle request + throttled camera-pitch reports for beam tilt
+  NoclipController.lua                Drives free-fly movement for /spectate (server only toggles the "Flying" state)
   AmbienceController.lua             Store ambience loop, proximity heartbeat, round/exit/escape stingers
   JumpscareController.lua            Full-screen jumpscare on catch + catch/scream audio
   DeathController.lua                Death/respawn/spectate menu + escape banner

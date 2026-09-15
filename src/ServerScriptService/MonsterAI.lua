@@ -22,6 +22,31 @@ local registry = {}
 local catchHandler = nil
 local overtimeActive = false
 
+-- Chase gives up (reverts to Patrol) after this many seconds with no sight
+-- of the target it's chasing -- see the file header and Update().
+local CHASE_GIVEUP_TIME = 5
+
+-- Once within this many studs of the player, Chase (and Overtime's
+-- _updateGodChase) stops recomputing a fresh direction every frame and
+-- just holds its last heading. Why: with monster-vs-player collision
+-- disabled (Main.server.lua) there's nothing physically stopping the
+-- monster at the player's edge anymore, so steering at their exact center
+-- every single frame lets it walk straight through that point. The root
+-- part is a real, momentum-carrying physics body, not a kinematic
+-- teleport -- once it overshoots, the direction back to the (still very
+-- close) player swings through a huge angle in one frame, and it can't
+-- instantly redirect its existing momentum to match. Recomputing that
+-- swung-around heading every frame while still carrying speed from the old
+-- one is exactly a textbook "seek without arrival" steering bug: it
+-- doesn't converge, it curls -- an orbit that tightens the closer it gets,
+-- which matches "orbits ~2 revolutions, then stands still" once it finally
+-- bleeds off enough speed to stop. Catching is a Touched-based proximity
+-- trigger, not a precise walk-to-this-exact-point task, so there was never
+-- a reason to keep correcting this tightly this close -- letting the last
+-- real heading carry it the rest of the way in removes the
+-- every-frame-overshoot-and-recompute cycle that caused it.
+local CHASE_ARRIVE_RADIUS = 4
+
 function MonsterAI.SetCatchHandler(fn)
 	catchHandler = fn
 end
@@ -71,7 +96,7 @@ function MonsterAI.EnterOvertime()
 	end
 	for _, monster in ipairs(registry) do
 		monster.god = true
-		monster.state = "Chase"
+		monster:_setState("Chase")
 	end
 end
 
@@ -149,9 +174,30 @@ local function createRig(def)
 	label.Text = def.displayName
 	label.Parent = nameTag
 
+	-- Temporary testing aid: shows which of the two states (Patrol/Chase)
+	-- this monster is currently in, right above its name. Remove once
+	-- chase behavior is confirmed solid and this is no longer needed for
+	-- debugging.
+	local stateTag = Instance.new("BillboardGui")
+	stateTag.Name = "StateTag"
+	stateTag.Size = UDim2.new(4, 0, 0.9, 0)
+	stateTag.StudsOffset = Vector3.new(0, 3.5, 0)
+	stateTag.Adornee = head
+	stateTag.Parent = head
+	local stateLabel = Instance.new("TextLabel")
+	stateLabel.Name = "StateLabel"
+	stateLabel.Size = UDim2.fromScale(1, 1)
+	stateLabel.BackgroundTransparency = 1
+	stateLabel.Font = Enum.Font.FredokaOne
+	stateLabel.TextScaled = true
+	stateLabel.TextColor3 = Color3.fromRGB(140, 220, 255)
+	stateLabel.TextStrokeTransparency = 0
+	stateLabel.Text = "PATROL"
+	stateLabel.Parent = stateTag
+
 	CollectionService:AddTag(model, "Monster")
 
-	return model, humanoid, root
+	return model, humanoid, root, stateLabel
 end
 
 function MonsterAI.new(def, maze)
@@ -166,7 +212,7 @@ function MonsterAI.new(def, maze)
 	self.destroyed = false
 	self.catchCooldown = {}
 
-	self.model, self.humanoid, self.root = createRig(def)
+	self.model, self.humanoid, self.root, self.stateLabel = createRig(def)
 	self.model.Parent = workspace
 
 	-- Floors/Ceiling should never occlude a sight check (_canSee) -- monsters
@@ -219,6 +265,19 @@ function MonsterAI.new(def, maze)
 	return self
 end
 
+-- Every place that flips self.state routes through here so the temporary
+-- PATROL/CHASE tag above the monster's head (createRig's stateLabel) always
+-- matches, without writing to the label's Text every single frame.
+function MonsterAI:_setState(state)
+	if self.state == state then
+		return
+	end
+	self.state = state
+	if self.stateLabel then
+		self.stateLabel.Text = state == "Chase" and "CHASE" or "PATROL"
+	end
+end
+
 function MonsterAI:_onTouch(hit)
 	if self.paused or self.state ~= "Chase" or not self.target then
 		return
@@ -241,7 +300,7 @@ function MonsterAI:_onTouch(hit)
 	if catchHandler then
 		catchHandler(player, self.def.id)
 	end
-	self.state = "Patrol"
+	self:_setState("Patrol")
 	self.target = nil
 end
 
@@ -590,7 +649,10 @@ function MonsterAI:_updateGodChase()
 	self.humanoid.WalkSpeed = def.chaseSpeed * Config.Round.OvertimeSpeedMultiplier
 	self:_updateFootstepAudio()
 	self.currentPath = nil
-	self:_steerToward(nearestRoot.Position)
+	local flatDist = (Vector3.new(nearestRoot.Position.X, 0, nearestRoot.Position.Z) - Vector3.new(self.root.Position.X, 0, self.root.Position.Z)).Magnitude
+	if flatDist > CHASE_ARRIVE_RADIUS then
+		self:_steerToward(nearestRoot.Position)
+	end
 end
 
 -- Exactly two states, Patrol and Chase, and they can't interfere with each
@@ -607,7 +669,8 @@ end
 -- underlying steering itself reads as smooth before any obstacle-awareness
 -- comes back (a version of that layered on top of direct Move() steering
 -- caused more problems than it solved across several rounds of tuning).
-local CHASE_GIVEUP_TIME = 5
+-- CHASE_GIVEUP_TIME and CHASE_ARRIVE_RADIUS are declared near the top of
+-- this file (both _updateGodChase above and Update below need them).
 
 function MonsterAI:Update(dt)
 	if self.paused or self.destroyed then
@@ -626,7 +689,7 @@ function MonsterAI:Update(dt)
 	if self.state ~= "Chase" then
 		local seen = self:_scanForTargets()
 		if seen then
-			self.state = "Chase"
+			self:_setState("Chase")
 			self.target = seen.player.Character
 			self.lastSightTime = now
 			self.currentPath = nil
@@ -655,16 +718,19 @@ function MonsterAI:Update(dt)
 				-- detour; that PathfindingService-routed detour was
 				-- exactly what could visibly loop before finally reaching
 				-- a target that never even moved.
-				self.state = "Patrol"
+				self:_setState("Patrol")
 				self.target = nil
 				self.currentPath = nil
 			else
 				self.humanoid.WalkSpeed = self:_applyQuirkSpeed(def.chaseSpeed)
 				self.currentPath = nil
-				self:_steerToward(root.Position)
+				local flatDist = (Vector3.new(root.Position.X, 0, root.Position.Z) - Vector3.new(self.root.Position.X, 0, self.root.Position.Z)).Magnitude
+				if flatDist > CHASE_ARRIVE_RADIUS then
+					self:_steerToward(root.Position)
+				end
 			end
 		else
-			self.state = "Patrol"
+			self:_setState("Patrol")
 			self.target = nil
 			self.currentPath = nil
 		end
@@ -702,7 +768,7 @@ end
 function MonsterAI:TeleportTo(position)
 	self.model:PivotTo(CFrame.new(position + Vector3.new(0, 3, 0)))
 	self.currentPath = nil
-	self.state = "Patrol"
+	self:_setState("Patrol")
 	self.target = nil
 end
 
