@@ -878,7 +878,15 @@ function MonsterAI:_faceAndMove(dt, desiredDir, speed, moveForward)
 	local position = self.root.Position
 	if moveForward then
 		local step = self.facing * speed * dt
-		if not self:_stepBlocked(step) then
+		-- Godmode (Overtime) is the one deliberate exception: it's meant
+		-- to be an inescapable "you should not survive this" endgame
+		-- state (see _updateGodChase's comment -- "completely ignoring
+		-- walls/obstacles" was the explicit original design, and it has
+		-- no pathfinding fallback to route around a block the way normal
+		-- Chase does), so the wall-clip backstop above would just leave a
+		-- godmode monster stuck at a wall between it and the nearest
+		-- player instead. Skip the check for it specifically.
+		if self.god or not self:_stepBlocked(step) then
 			position = position + step
 		end
 	end

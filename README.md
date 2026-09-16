@@ -185,6 +185,19 @@ in Workspace. A totally blank new place works fine.
   (allowed, on purpose), and only a step whose *center* is blocked — an
   actual wall — gets refused.
 
+  **One deliberate exception: Overtime godmode.** `_updateGodChase`
+  beelines straight at whichever player is currently nearest, re-picked
+  fresh every frame — no sight/range checks, and (unlike normal Chase) no
+  pathfinding fallback to route around a block, by original design
+  ("completely ignoring walls/obstacles," see that function's comment) —
+  it's meant to be a genuinely inescapable endgame state once Overtime
+  starts. Since the wall-clip backstop above lives inside the shared
+  `_faceAndMove` primitive, it would otherwise also apply to godmode and
+  just leave it stuck at a wall with nothing to route around. `_faceAndMove`
+  checks `self.god` and skips the backstop specifically for it, so godmode
+  keeps its original walls-don't-matter behavior; normal Chase and Patrol
+  are unaffected.
+
   **Patrol** requests a route to a random point on the grid (or an alert
   location) via `PathfindingService` and walks its waypoints. Its
   `WaypointSpacing` was widened from 4 to 16: that setting is the *maximum*
@@ -352,9 +365,29 @@ in Workspace. A totally blank new place works fine.
   (`ExitService.lua`).
 - **Jumpscare → Respawn/Spectate flow** (`PlayerService.lua` +
   `JumpscareController.lua` + `DeathController.lua` +
-  `SpectateController.lua`): getting caught freezes you, shows a jumpscare
-  for the monster that got you, then offers Respawn (brief invulnerability)
-  or Spectate (camera follows another living player, cycle with `,` / `.`).
+  `SpectateController.lua`): getting caught freezes you and shows a
+  jumpscare for the monster that got you. **TEMP, for faster testing:**
+  right now `PlayerService:CatchPlayer`'s delayed callback calls
+  `SpawnForRound` directly instead of `MarkDead` — you respawn
+  automatically the instant the jumpscare ends, no click required, and the
+  Respawn/Spectate `DeathGui` menu (`DeathController.lua`) never actually
+  shows for a normal catch. That menu and `MarkDead` still exist and are
+  still used by `ForceTimeout` (the round legitimately ending on the
+  overtime hard cap) — Respawn wouldn't do anything there anyway since
+  `roundActive` is already false by that point. Revert by pointing
+  `CatchPlayer`'s delayed call back at `self:MarkDead(player, monsterId)`
+  once you want the manual choice back.
+- **Real bug found alongside the above**: `GameState:_checkRoundEnd`
+  originally only treated `"Alive"` and `"Dead"` as "still in progress" —
+  it never accounted for `"Caught"`, the ~`JumpscareDuration` (2.6s) window
+  between being hit and actually being marked `"Dead"`. This poll runs
+  once a second, comfortably inside that window, so a solo (or
+  last-remaining) player sitting in `"Caught"` could get read as "everyone
+  has resolved" and trigger the Results screen — a full 14s wait, then a
+  new Intermission — mid-jumpscare, before they were ever offered a
+  respawn. That's very likely what "the round-over screen stays up a long
+  time after death" actually was. Fixed by adding `"Caught"` to the same
+  guard as `"Alive"`/`"Dead"`.
 - **Round loop** (`GameState.lua`): Waiting → Intermission countdown →
   Playing → Results, looping forever. A round also force-ends after 10
   minutes so nobody's stuck in a stalemate.

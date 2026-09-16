@@ -456,7 +456,14 @@ function PlayerService:CatchPlayer(player, monsterId)
 
 	task.delay(Config.Round.JumpscareDuration, function()
 		if player.Parent then
-			self:MarkDead(player, monsterId)
+			-- TEMP, for faster testing (see README): skip "Dead" and the
+			-- Respawn/Spectate menu (DeathController.lua's DeathGui)
+			-- entirely on a normal catch -- respawn immediately once the
+			-- jumpscare finishes, no click required. MarkDead/the death
+			-- menu are still used by ForceTimeout below (the round
+			-- actually ending), since Respawn wouldn't do anything there
+			-- anyway once roundActive is false.
+			self:SpawnForRound(player)
 		end
 	end)
 end

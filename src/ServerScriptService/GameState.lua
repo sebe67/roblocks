@@ -149,12 +149,17 @@ function GameState:_checkRoundEnd()
 	end
 	for _, player in ipairs(Players:GetPlayers()) do
 		local state = player:GetAttribute("State")
-		-- "Dead" means they're still sitting on the Respawn/Spectate choice --
-		-- the round isn't over until every player has actually resolved that
-		-- choice (Spectating/Escaped/TimedOut), otherwise a solo/last-alive
-		-- player's jumpscare screen gets yanked away by the Results screen
-		-- before they can click anything.
-		if state == "Alive" or state == "Dead" then
+		-- "Caught" is the ~JumpscareDuration window between being hit and
+		-- actually being marked "Dead" (CatchPlayer's task.delay below) --
+		-- this poll runs once a second, easily inside that window, and a
+		-- solo/last-alive player sitting in "Caught" is neither "Alive" nor
+		-- "Dead" yet, so without this the round could be declared over
+		-- (straight into the 14s Results screen) mid-jumpscare, before
+		-- they even got marked Dead. "Dead" itself means they're still
+		-- sitting on the Respawn/Spectate choice -- the round isn't over
+		-- until every player has actually resolved that choice
+		-- (Spectating/Escaped/TimedOut/respawned back to Alive).
+		if state == "Alive" or state == "Dead" or state == "Caught" then
 			return
 		end
 	end
