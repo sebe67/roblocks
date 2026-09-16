@@ -565,6 +565,10 @@ function MonsterAI:_ensurePath(destination)
 	self:_moveAlongPath(self:_pathTo(destination) or {})
 end
 
+-- How far (in studs) a groundPound burst's thud reaches other monsters --
+-- see _applyQuirkSpeed's "groundPound" branch.
+local GROUND_POUND_NOISE_RADIUS = 45
+
 function MonsterAI:_applyQuirkSpeed(baseSpeed)
 	local def = self.def
 	if def.quirk == "snortBurst" and self.state == "Chase" then
@@ -574,6 +578,14 @@ function MonsterAI:_applyQuirkSpeed(baseSpeed)
 	elseif def.quirk == "rollDash" and self.state == "Chase" then
 		if math.random() < 0.015 then
 			self.burstUntil = os.clock() + 0.8
+		end
+	elseif def.quirk == "groundPound" and self.state == "Chase" then
+		if math.random() < 0.015 then
+			self.burstUntil = os.clock() + 0.8
+			-- The burst is loud enough to be its own noise event, same as a
+			-- minigame station running -- pulls in whichever other
+			-- monsters happen to be nearby, on top of speeding him up.
+			MonsterAI.BroadcastNoise(self.root.Position, GROUND_POUND_NOISE_RADIUS)
 		end
 	end
 	if self.burstUntil and os.clock() < self.burstUntil then

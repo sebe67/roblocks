@@ -108,9 +108,12 @@ Config.Noclip = {
 -- character, toggled server-side, so everyone sees everyone else's beam --
 -- not just a client-only visual effect for its owner.
 Config.Flashlight = {
-	Range = 45, -- how far forward the beam reaches; brightness/angle otherwise unchanged
+	-- 60 is the hard ceiling Roblox enforces on SpotLight.Range (the API
+	-- clamps it regardless of lighting technology) -- this is as far as
+	-- it can throw, up from 45.
+	Range = 60,
 	Angle = 40, -- full cone angle in degrees (SpotLight.Angle), not a half-angle
-	Brightness = 3,
+	Brightness = 3.5, -- up slightly from 3
 	Color = Color3.fromRGB(255, 250, 220),
 	-- How far up/down (degrees) the beam can tilt from level, clamped
 	-- server-side against the pitch the client reports (PlayerService's
@@ -366,6 +369,36 @@ Config.Monsters = {
 		jumpscareSoundId = "",
 		idleSoundId = "", -- her "callout" voice line -- fired the instant she spots you, not randomly
 		idleSoundInterval = { 8, 16 },
+	},
+	{
+		id = "TungSahur",
+		displayName = "Tung Tung Tung Sahur",
+		color = Color3.fromRGB(92, 64, 38),
+		accentColor = Color3.fromRGB(200, 180, 140),
+		scale = 1.7,
+		patrolSpeed = 11,
+		chaseSpeed = 22,
+		investigateSpeed = 14,
+		sightRange = 38,
+		sightAngle = 70,
+		hearingRadius = 28,
+		loseSightTime = 4,
+		repathInterval = 0.4,
+		-- Same occasional-burst mechanic as snortBurst/rollDash, but the
+		-- burst itself also thuds the ground hard enough to be a real
+		-- noise event (MonsterAI.BroadcastNoise) within a radius -- see
+		-- _applyQuirkSpeed. A burst mid-chase can now pull in whichever
+		-- other monsters happen to be nearby, on top of speeding him up.
+		quirk = "groundPound",
+		jumpscareColor = Color3.fromRGB(92, 64, 38),
+		flavor = "Tung tung tung tung sahur. It just wants you to wake up. It will make sure you do.",
+		footstepSoundId = "rbxasset://sounds/action_footsteps_plastic.mp3",
+		footstepPitch = 0.5,
+		footstepMaxDistance = 95, -- the loudest of all of them -- it's a giant wooden club banging with every step
+		chaseSoundId = "",
+		jumpscareSoundId = "",
+		idleSoundId = "",
+		idleSoundInterval = { 4, 9 },
 	},
 }
 

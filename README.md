@@ -88,9 +88,8 @@ in Workspace. A totally blank new place works fine.
   `Working` attribute together, so a scripted toggle reads identically to a
   naturally-dead fixture everywhere else that attribute matters (the
   Grinch's darkBoost quirk). Try it live with `/light <x> <y> <on|off>` in
-  chat (wired up in `Main.server.lua`, open to any player for now — gate it
-  before this goes public, same as `/godmode`).
-- **8 monsters**, each with its own stat block and one mechanical quirk, all
+  chat.
+- **9 monsters**, each with its own stat block and one mechanical quirk, all
   tuned in `ReplicatedStorage/Shared/Config.lua` (see below).
 - **Sight-based AI** (`MonsterAI.lua`): exactly two states, **Patrol** and
   **Chase**, structured so neither can interfere with the other. Chase is
@@ -280,6 +279,12 @@ in Workspace. A totally blank new place works fine.
   increase to actually see, which is what "doesn't work on the roof"
   turned out to be. Now `Concrete` at `(58,58,65)`, matching Floor's
   already-working diffuse response, so the beam reads clearly on both.
+  `Range` is now 60 (up from 45) — the actual hard ceiling Roblox enforces
+  on `SpotLight.Range`, clamped at the API level regardless of lighting
+  technology, so that's as far as it can ever throw. `Brightness` bumped
+  slightly too (3 → 3.5), so a blackout doesn't leave you relying on
+  bumping into a monster to know it's there — you should be able to catch
+  a distant beam-lit glimpse of one coming first.
 - **3 minigame stations** that require real attention and periodically ping
   every nearby monster while active (`MinigameService.lua` +
   `StarterPlayerScripts/Minigames/*`). Clearing all of them unlocks the exit
@@ -320,6 +325,7 @@ in Workspace. A totally blank new place works fine.
 | Kung Fu Panda | medium | occasional straight-line dash burst |
 | SpongeBob | medium | **kills every working light near him as he moves** (they come back ~15s after he leaves, see below) |
 | Dora | medium | **spotting you alerts every other monster to your last position** |
+| Tung Tung Tung Sahur | slow patrol, decent chase, huge and loud | occasional speed burst while chasing (like Peppa/Po) that also thuds the ground loud enough to draw any monster within 45 studs toward the commotion |
 
 Thomas's restriction isn't a special-cased graph — it falls out naturally
 from giving him a much larger `pathAgentRadius` in `MonsterAI.lua`'s
@@ -335,8 +341,10 @@ obstacle-awareness comes back for everyone.
 You asked for more roster ideas: **Bluey, the Teletubbies (Tinky Winky),
 Cocomelon's JJ, and SpongeBob/Dora's Nickelodeon stablemate Baby Shark**
 would all fit the same "wholesome mascot gone wrong" tone if you want to
-keep expanding past 8. Adding one is just a new entry in `Config.Monsters`
-— no other code changes needed.
+keep expanding past 9. Adding one is just a new entry in `Config.Monsters`
+— no other code changes needed, which is exactly how Tung Tung Tung Sahur
+(the internet meme, not a licensed mascot, but the same "cheerful thing
+gone wrong" energy) got added.
 
 ## The story: why the tasks exist
 
@@ -408,11 +416,15 @@ round on its own — Respawn/Spectate always stays live for anyone who hasn't
 resolved their choice yet; the round only ends early once everyone has
 actually escaped or given up.
 
+**Every debug chat command below (`/godmode`, `/light`, `/blackout`,
+`/spectate`, `/back`) only responds to one hardcoded username**
+(`DEBUG_USERNAME` in `Main.server.lua`, currently `"Besussero"`) — anyone
+else typing them is simply ignored. Update that constant if the account
+name ever changes.
+
 **Testing it without waiting 10 minutes:** type `/godmode` in chat during an
 active round to skip straight to Overtime. It's wired up in
-`Main.server.lua` (`Player.Chatted` → `GameState:RequestOvertime()`) and
-currently open to any player — fine for testing, but gate it (e.g. to
-specific `UserId`s) before this ever goes public.
+`Main.server.lua` (`Player.Chatted` → `GameState:RequestOvertime()`).
 
 **Free-fly noclip for testing:** type `/spectate` in chat to go invisible
 and intangible and fly anywhere — through walls, across the whole map —
@@ -422,8 +434,7 @@ it's active: it sets the same `Invulnerable` attribute
 `MonsterAI.playersToCheck()` already filters out before any sight or catch
 check runs, so no monster-side changes were needed. Type `/back` to return
 to normal (visible, collidable, walking control restored). Also wired up in
-`Main.server.lua`, same "open to any player for now, gate before this goes
-public" caveat as every other debug command here.
+`Main.server.lua`.
 
 The first version of this drove flight with `AssemblyLinearVelocity` and
 `Humanoid.PlatformStand = true`, and it was glitchy and still didn't

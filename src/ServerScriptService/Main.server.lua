@@ -64,10 +64,16 @@ end)
 
 local gameState = GameState.new(maze, playerService, monsters, minigameService, exitService)
 
--- Debug commands, both open to any player for now since this is still in
--- active testing -- gate them (e.g. to specific UserIds) before this ever
--- goes public.
+-- Debug commands, gated to your own username so anyone else joining the
+-- game can't trigger them. Checked against Name rather than UserId since
+-- that's what you asked to gate against; Name can change if you ever
+-- rename your account, in which case update DEBUG_USERNAME below.
+local DEBUG_USERNAME = "Besussero"
+
 local function onChatted(player, message)
+	if player.Name ~= DEBUG_USERNAME then
+		return
+	end
 	local lower = message:lower()
 	if lower:match("^/godmode%s*$") then
 		gameState:RequestOvertime()
