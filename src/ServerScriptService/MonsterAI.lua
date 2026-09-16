@@ -31,6 +31,21 @@ local CHASE_GIVEUP_TIME = 5
 -- hack the way the old Humanoid:Move()-based one did.
 local TURN_RATE = math.rad(300)
 
+-- EXPERIMENTAL -- Chase obstacle-awareness. Everything tagged with this
+-- same "EXPERIMENTAL" word (these two constants, _hasClearLine,
+-- _ensureChasePath, _followChasePath, _pathToChase, the chaseCurrentPath/
+-- chasePathIndex/nextChasePathAttempt fields, and the branch inside
+-- Update()'s Chase case that reads "if self:_hasClearLine(root)") is new
+-- and easy to lift back out as one unit if it makes chasing feel worse --
+-- see README's "Sight-based AI" section for the up-to-date status of this
+-- experiment. None of it touches Patrol's own path system in any way
+-- (separate fields, separate functions) -- reverting this only means
+-- deleting the tagged pieces and restoring Chase's "else" branch to just
+-- self:_faceAndMove(dt, root.Position - self.root.Position, speed, true)
+-- unconditionally.
+local CHASE_WAYPOINT_SPACING = 8 -- tighter than Patrol's 16 -- a stale route should lag a moving player less between replans
+local CHASE_REPLAN_INTERVAL = 0.5 -- vs Patrol's 1s -- keeps the reroute from going too stale while chasing a moving target
+
 function MonsterAI.SetCatchHandler(fn)
 	catchHandler = fn
 end
@@ -205,6 +220,11 @@ function MonsterAI.new(def, maze)
 	self.paused = true
 	self.destroyed = false
 	self.catchCooldown = {}
+	-- EXPERIMENTAL (Chase obstacle-awareness) -- entirely separate from
+	-- Patrol's currentPath/pathIndex/nextPathAttempt.
+	self.chaseCurrentPath = nil
+	self.chasePathIndex = nil
+	self.nextChasePathAttempt = nil
 
 	self.model, self.humanoid, self.root, self.stateLabel = createRig(def)
 	self.model.Parent = workspace
@@ -302,6 +322,7 @@ function MonsterAI:_onTouch(hit)
 	end
 	self:_setState("Patrol")
 	self.target = nil
+	self.chaseCurrentPath = nil
 end
 
 local function playersToCheck()
@@ -316,6 +337,21 @@ local function playersToCheck()
 		end
 	end
 	return list
+end
+
+-- Shared by _canSee (below) and the EXPERIMENTAL _hasClearLine: a plain
+-- raycast from this monster to targetRoot, excluding Floors/Ceiling and
+-- this monster's own body (self.raycastExclude) and, critically, ignoring
+-- a hit that's just part of the target's OWN body (a shoulder, an arm) --
+-- an earlier obstacle-avoidance attempt didn't do that last exclusion and
+-- misread the target's own limbs as a wall in the way. Returns true if
+-- something real is actually blocking the line.
+function MonsterAI:_rayBlocked(targetRoot, toTarget)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = self.raycastExclude
+	local result = workspace:Raycast(self.root.Position, toTarget, params)
+	return result ~= nil and not result.Instance:IsDescendantOf(targetRoot.Parent)
 end
 
 function MonsterAI:_canSee(targetRoot)
@@ -345,14 +381,16 @@ function MonsterAI:_canSee(targetRoot)
 		end
 	end
 
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = self.raycastExclude
-	local result = workspace:Raycast(myPos, toTarget, params)
-	if result and not result.Instance:IsDescendantOf(targetRoot.Parent) then
-		return false
-	end
-	return true
+	return not self:_rayBlocked(targetRoot, toTarget)
+end
+
+-- EXPERIMENTAL (Chase obstacle-awareness, see the constants near the top
+-- of this file) -- unlike _canSee, this has no FOV cone or sight range:
+-- it only answers "is the straight line to the player physically blocked
+-- right now," which is all Chase needs to decide whether to beeline or
+-- fall back to a pathfound route.
+function MonsterAI:_hasClearLine(targetRoot)
+	return not self:_rayBlocked(targetRoot, targetRoot.Position - self.root.Position)
 end
 
 function MonsterAI:_inDarkCell()
@@ -485,7 +523,11 @@ function MonsterAI.BroadcastCallout(position, excludeMonster)
 	end
 end
 
-local function computeNavmeshPath(fromPos, toPos, agentRadius, agentScale)
+-- waypointSpacing defaults to 16 (Patrol's value) when omitted -- the
+-- EXPERIMENTAL Chase obstacle-awareness path (_pathToChase) passes
+-- CHASE_WAYPOINT_SPACING (8) instead; Patrol's own calls (_pathTo) are
+-- unchanged.
+local function computeNavmeshPath(fromPos, toPos, agentRadius, agentScale, waypointSpacing)
 	local path = PathfindingService:CreatePath({
 		AgentRadius = agentRadius,
 		AgentHeight = 5 * agentScale,
@@ -498,7 +540,7 @@ local function computeNavmeshPath(fromPos, toPos, agentRadius, agentScale)
 		-- interior collapse to a couple of waypoints; real turns (doorways,
 		-- corners) still force one because the underlying route actually
 		-- bends there, so direction changes now line up with intersections.
-		WaypointSpacing = 16,
+		WaypointSpacing = waypointSpacing or 16,
 	})
 	local ok = pcall(function()
 		path:ComputeAsync(fromPos, toPos)
@@ -563,6 +605,50 @@ function MonsterAI:_ensurePath(destination)
 	end
 	self.nextPathAttempt = now + 1
 	self:_moveAlongPath(self:_pathTo(destination) or {})
+end
+
+-- EXPERIMENTAL (Chase obstacle-awareness) -- everything below through
+-- _followChasePath mirrors _pathTo/_ensurePath/_followCurrentPath above,
+-- but through entirely separate fields (chaseCurrentPath/chasePathIndex/
+-- nextChasePathAttempt) so Patrol's own path bookkeeping is never touched
+-- by anything here.
+function MonsterAI:_pathToChase(destination)
+	return computeNavmeshPath(self.root.Position, destination, self.def.pathAgentRadius or 2, self.def.scale, CHASE_WAYPOINT_SPACING)
+end
+
+-- Unlike Patrol's _ensurePath (which only ever requests a fresh path once
+-- the current one is exhausted), this replans on a timer
+-- (CHASE_REPLAN_INTERVAL) even while a path is still mid-progress -- the
+-- destination is the player's live position, which keeps moving, so
+-- walking an old route all the way to its end could mean walking all the
+-- way to where they used to be before ever getting a fresh read on where
+-- they actually are now.
+function MonsterAI:_ensureChasePath(destination)
+	local now = os.clock()
+	local havePath = self.chaseCurrentPath and #self.chaseCurrentPath > 0
+	if havePath and self.nextChasePathAttempt and now < self.nextChasePathAttempt then
+		return
+	end
+	self.nextChasePathAttempt = now + CHASE_REPLAN_INTERVAL
+	self.chaseCurrentPath = self:_pathToChase(destination) or {}
+	self.chasePathIndex = 1
+end
+
+function MonsterAI:_followChasePath(dt, speed)
+	if not self.chaseCurrentPath or not self.chaseCurrentPath[self.chasePathIndex] then
+		return true
+	end
+	local targetPoint = self.chaseCurrentPath[self.chasePathIndex]
+	local flatDist = (Vector3.new(targetPoint.X, 0, targetPoint.Z) - Vector3.new(self.root.Position.X, 0, self.root.Position.Z)).Magnitude
+	if flatDist < 3 then
+		self.chasePathIndex += 1
+		if not self.chaseCurrentPath[self.chasePathIndex] then
+			return true
+		end
+		targetPoint = self.chaseCurrentPath[self.chasePathIndex]
+	end
+	self:_faceAndMove(dt, targetPoint - self.root.Position, speed, true)
+	return false
 end
 
 -- How far (in studs) a groundPound burst's thud reaches other monsters --
@@ -750,14 +836,31 @@ function MonsterAI:Update(dt)
 				self:_setState("Patrol")
 				self.target = nil
 				self.currentPath = nil
+				self.chaseCurrentPath = nil
 			else
 				self.currentPath = nil
-				self:_faceAndMove(dt, root.Position - self.root.Position, self:_applyQuirkSpeed(def.chaseSpeed), true)
+				local speed = self:_applyQuirkSpeed(def.chaseSpeed)
+				-- EXPERIMENTAL: beeline when the direct line is clear
+				-- (unchanged fast path, no pathfinding overhead most of
+				-- the time); fall back to a pathfound route only while
+				-- something's actually in the way. See the constants near
+				-- the top of this file for how to remove this cleanly.
+				if self:_hasClearLine(root) then
+					self.chaseCurrentPath = nil
+					self:_faceAndMove(dt, root.Position - self.root.Position, speed, true)
+				else
+					self:_ensureChasePath(root.Position)
+					local reachedEnd = self:_followChasePath(dt, speed)
+					if reachedEnd then
+						self.chaseCurrentPath = nil
+					end
+				end
 			end
 		else
 			self:_setState("Patrol")
 			self.target = nil
 			self.currentPath = nil
+			self.chaseCurrentPath = nil
 		end
 		return
 	end
@@ -799,6 +902,7 @@ end
 function MonsterAI:TeleportTo(position)
 	self.model:PivotTo(CFrame.new(position + Vector3.new(0, 3, 0)))
 	self.currentPath = nil
+	self.chaseCurrentPath = nil
 	self:_setState("Patrol")
 	self.target = nil
 end

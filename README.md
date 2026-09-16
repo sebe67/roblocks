@@ -118,15 +118,51 @@ in Workspace. A totally blank new place works fine.
   facing times this frame's `dt` — nothing but the facing direction itself
   carries over between frames, which is the literal "a direction to face
   in, and a move-forward function, but they don't always have to be
-  moving forward" this was rebuilt to. Chase calls it every frame with
-  `moveForward = true` and the live direction to the player, completely
-  ignoring walls and obstacles — no `PathfindingService` fallback, no
-  exception for Thomas. Patrol calls it once per waypoint the same way;
+  moving forward" this was rebuilt to. Patrol calls it once per waypoint;
   when there's no path yet (see below), it just doesn't call it at all
   that frame, which is the "not always moving forward" case in practice.
   **Nothing in `MonsterAI.lua` calls `Humanoid:Move()` or
   `Humanoid:MoveTo()` anymore** — the `Humanoid` instance is still there
   for its stats/animations, it's just no longer what moves anything.
+
+  **EXPERIMENTAL — Chase obstacle-awareness is back, currently being
+  playtested.** Every frame, Chase now checks `_hasClearLine(root)` (a
+  plain raycast, reusing the same target's-own-body exclusion `_canSee`
+  already used — not the old spherecast that misread limbs as walls). If
+  clear, it beelines exactly as before with `_faceAndMove` — unchanged
+  fast path, no pathfinding overhead most of the time. If blocked, it
+  falls back to a `PathfindingService` route to the player's *current*
+  position via `_ensureChasePath`/`_followChasePath` — entirely separate
+  fields (`chaseCurrentPath`/`chasePathIndex`/`nextChasePathAttempt`) from
+  Patrol's own path bookkeeping, so this can never interact with or break
+  Patrol. Two deliberate differences from Patrol's pathing: `WaypointSpacing`
+  is tighter (`CHASE_WAYPOINT_SPACING`, 8 vs Patrol's 16) and it replans on
+  a timer (`CHASE_REPLAN_INTERVAL`, every 0.5s) even mid-path rather than
+  only once a route is exhausted — Patrol's target is a fixed point, so
+  walking a stale route to the end is fine, but Chase's target (the player)
+  keeps moving, so a route more than half a second old risks visibly
+  lagging behind where they actually went.
+
+  This is safe to try now in a way it wasn't several rounds ago: the old
+  concern with reintroducing pathfinding-based obstacle-avoidance was
+  always about interacting badly with `Humanoid:Move()`'s momentum (a
+  one-frame reroute causing a visible flinch/veer, or fighting an
+  in-flight velocity). With movement now fully kinematic and momentum-free
+  (previous section), a sudden switch between beelining and following a
+  waypoint just costs a bounded turn — nothing to overshoot or fight.
+  **Side effect:** Thomas's `wideBody` doorway restriction (his defining
+  quirk) now naturally applies during Chase too, not just Patrol, since
+  his oversized `pathAgentRadius` is used for `_pathToChase` the same way
+  it already was for `_pathTo`.
+
+  **If this makes chasing feel worse** (routes lagging too far behind,
+  monsters looking like they're "giving up" chasing around a corner, CPU
+  cost from `ComputeAsync` calls, anything else), everything above is
+  self-contained and tagged `EXPERIMENTAL` in `MonsterAI.lua`'s comments
+  for exactly this reason — reverting means deleting the tagged pieces and
+  restoring Chase's live-target branch to the single unconditional
+  `_faceAndMove` call it was before. Nothing about Patrol needs to change
+  either way.
 
   **Patrol** requests a route to a random point on the grid (or an alert
   location) via `PathfindingService` and walks its waypoints. Its
@@ -222,14 +258,14 @@ in Workspace. A totally blank new place works fine.
     *can* spiral into an orbit or get stuck mid-correction: the worst case
     is turning in place for a frame or two, never curling off course.
 
-  Thomas (wideBody) no longer gets a special exception during Chase — he
-  now blindly beelines like everyone else, which temporarily means he can
-  aim straight through a doorway too narrow for him mid-chase. Since
-  movement is now kinematic rather than physics-driven (previous
-  paragraph), that's no longer even a physical wall-block — an
-  Anchored, directly-`CFrame`-set part has no collision response, so
-  Chase walking "through" a wall now means exactly that, visibly clipping
-  through it, until obstacle-awareness returns for everyone.
+  Thomas (wideBody) briefly had no special exception during Chase at all
+  — he'd beeline straight through a doorway too narrow for him, clipping
+  through it visibly (Anchored, directly-`CFrame`-set parts have no
+  collision response, so "walking through a wall" now means exactly
+  that). With the EXPERIMENTAL obstacle-awareness above, his oversized
+  `pathAgentRadius` applies to his Chase reroute too, so his doorway
+  restriction is naturally back during Chase as well — as long as that
+  experiment sticks around.
 
   Monsters are scattered at least `Config.Maze.MonsterSpawnExclusionCells`
   cells from the (now-central) spawn point both at server boot and again at
@@ -333,10 +369,9 @@ PathfindingService calls than every other monster. A bigger agent radius
 makes Roblox's navmesh solver treat narrow doorways as too tight to fit
 through, so he's automatically routed only through wide hallway gaps and
 open rooms whenever he's actually pathfinding, with zero bespoke pathing
-code. Since Chase currently always steers straight regardless of walls
-(see "Sight-based AI" above), this restriction is only enforced while he's
-patrolling for now — his defining quirk will apply during Chase again once
-obstacle-awareness comes back for everyone.
+code. This now applies during Chase too, not just Patrol, since the
+EXPERIMENTAL obstacle-awareness (see "Sight-based AI" above) reuses the
+same `pathAgentRadius` for his Chase reroute.
 
 You asked for more roster ideas: **Bluey, the Teletubbies (Tinky Winky),
 Cocomelon's JJ, and SpongeBob/Dora's Nickelodeon stablemate Baby Shark**
