@@ -315,9 +315,13 @@ in Workspace. A totally blank new place works fine.
   increase to actually see, which is what "doesn't work on the roof"
   turned out to be. Now `Concrete` at `(58,58,65)`, matching Floor's
   already-working diffuse response, so the beam reads clearly on both.
-  `Range` is now 60 (up from 45) — the actual hard ceiling Roblox enforces
-  on `SpotLight.Range`, clamped at the API level regardless of lighting
-  technology, so that's as far as it can ever throw. `Brightness` bumped
+  `Range` went 45 → 60 → 120. 60 was set believing (from memory, not
+  something testable in this environment) that Roblox hard-clamps
+  `SpotLight.Range` to 60 studs regardless of lighting technology — if
+  that's actually still true, 120 will just render identically to 60 and
+  the beam won't visibly reach any farther than it already did; if it's
+  not (or no longer is), 120 actually throws twice as far. Whichever one
+  you see in-game settles which memory was right. `Brightness` bumped
   slightly too (3 → 3.5), so a blackout doesn't leave you relying on
   bumping into a monster to know it's there — you should be able to catch
   a distant beam-lit glimpse of one coming first.
@@ -452,10 +456,10 @@ resolved their choice yet; the round only ends early once everyone has
 actually escaped or given up.
 
 **Every debug chat command below (`/godmode`, `/light`, `/blackout`,
-`/spectate`, `/back`) only responds to one hardcoded username**
-(`DEBUG_USERNAME` in `Main.server.lua`, currently `"Besussero"`) — anyone
-else typing them is simply ignored. Update that constant if the account
-name ever changes.
+`/spectate`, `/spectate2`, `/back`) only responds to one hardcoded
+username** (`DEBUG_USERNAME` in `Main.server.lua`, currently
+`"Besussero"`) — anyone else typing them is simply ignored. Update that
+constant if the account name ever changes.
 
 **Testing it without waiting 10 minutes:** type `/godmode` in chat during an
 active round to skip straight to Overtime. It's wired up in
@@ -465,24 +469,41 @@ active round to skip straight to Overtime. It's wired up in
 and intangible and fly anywhere — through walls, across the whole map —
 with WASD (camera-relative) + Space/LeftCtrl for up/down
 (`NoclipController.lua`). Monsters can't see, chase, or touch you while
-it's active: it sets the same `Invulnerable` attribute
-`MonsterAI.playersToCheck()` already filters out before any sight or catch
-check runs, so no monster-side changes were needed. Type `/back` to return
-to normal (visible, collidable, walking control restored). Also wired up in
-`Main.server.lua`.
+it's active: `EnableNoclip` (`PlayerService.lua`) sets the same
+`Invulnerable` attribute `MonsterAI.playersToCheck()` already filters out
+before any sight or catch check runs, so no monster-side changes were
+needed. Type `/back` to return to normal (visible, collidable, walking
+control restored).
+
+**`/spectate2` is the same free-fly mobility, but the opposite visibility:
+monsters see and chase you exactly like a normal player would.** Useful
+for testing detection/chase behavior against yourself without a catch
+ending the test — `EnableTestSpectate` leaves `Invulnerable` false (so
+`playersToCheck()` includes you normally) and instead sets a new
+`Untouchable` attribute that only `PlayerService:CatchPlayer` checks: the
+monster's `_onTouch` still fires exactly as normal (cooldown included),
+`CatchPlayer` just no-ops instead of actually killing you, so it's a real
+catch attempt with no consequence rather than an invisible non-event.
+`/back` ends this the same way it ends `/spectate` — see below.
+
+`EnableNoclip` and `EnableTestSpectate` share one underlying
+`_beginFlight` (`PlayerService.lua`): identical mobility rig, differing
+only in which attributes they set (`Invulnerable` for `/spectate`,
+`Untouchable` for `/spectate2`). `/back` calls one shared `EndFlight` that
+undoes either mode without needing to know which was active.
 
 The first version of this drove flight with `AssemblyLinearVelocity` and
 `Humanoid.PlatformStand = true`, and it was glitchy and still didn't
 reliably clip through walls — `PlatformStand` ragdolls the rig (every
 limb's joint goes loose) rather than just suspending walk control, and
 that ragdoll physics fought our velocity writes to the root every frame.
-Now `EnableNoclip` (`PlayerService.lua`) sets `HumanoidRootPart.Anchored
-= true` instead, which — like the monster movement rebuild above — takes
-the *entire* welded rig out of physics simulation: no gravity, no ragdoll,
-no collision response possible, nothing left to fight. With the root
-Anchored, `NoclipController.lua` becomes the only thing moving the
-character, translating `root.CFrame` directly every frame — nothing to
-glitch, and nothing for a wall to stop.
+Now `_beginFlight` sets `HumanoidRootPart.Anchored = true` instead, which
+— like the monster movement rebuild above — takes the *entire* welded rig
+out of physics simulation: no gravity, no ragdoll, no collision response
+possible, nothing left to fight. With the root Anchored,
+`NoclipController.lua` becomes the only thing moving the character,
+translating `root.CFrame` directly every frame — nothing to glitch, and
+nothing for a wall to stop.
 
 Adding a fourth station is: build its client module under
 `StarterPlayerScripts/Minigames/`, register it in

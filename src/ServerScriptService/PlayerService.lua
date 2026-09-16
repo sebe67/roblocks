@@ -169,15 +169,27 @@ function PlayerService:_toggleFlashlight(player)
 	end
 end
 
--- /spectate and /back (Main.server.lua debug commands): a free-fly noclip
--- mode for testing, distinct from the death-flow "Spectating" State above
--- -- that one locks your camera onto another alive player, this one lets
--- your own character fly through walls. Invisible+intangible is just
--- CanCollide=false/Transparency=1 on every part (same stash-and-restore
--- shape as _hideCharacter); "can't be seen/chased/touched by monsters"
--- reuses the existing Invulnerable attribute, which MonsterAI's
--- playersToCheck() already filters out before any sight or catch check
--- ever runs.
+-- /spectate, /spectate2, and /back (Main.server.lua debug commands): a
+-- free-fly noclip mode for testing, distinct from the death-flow
+-- "Spectating" State above -- that one locks your camera onto another
+-- alive player, this one lets your own character fly through walls. Both
+-- commands share the exact same movement rig (_beginFlight/_endFlight);
+-- they only differ in what happens once you're flying:
+--   /spectate  (EnableNoclip)      -- Invulnerable=true, so MonsterAI's
+--                                     playersToCheck() filters you out
+--                                     before any sight/catch check runs.
+--                                     Fully invisible to monster AI.
+--   /spectate2 (EnableTestSpectate) -- Invulnerable stays false, so
+--                                     monsters see and chase you exactly
+--                                     like a normal player would -- the
+--                                     Untouchable attribute set here just
+--                                     makes CatchPlayer below a no-op, so
+--                                     a "catch" never actually kills you.
+--                                     For testing chase/detection against
+--                                     yourself without ending your test.
+--
+-- Invisible+intangible is just CanCollide=false/Transparency=1 on every
+-- part (same stash-and-restore shape as _hideCharacter).
 --
 -- The first version of this drove flight by setting AssemblyLinearVelocity
 -- every frame with humanoid.PlatformStand = true, and it was glitchy and
@@ -193,7 +205,7 @@ end
 -- as the monster movement rebuild (MonsterAI.lua's _faceAndMove). With the
 -- root Anchored, NoclipController.lua becomes the only thing moving the
 -- character at all, by setting its CFrame directly every frame.
-function PlayerService:EnableNoclip(player)
+function PlayerService:_beginFlight(player, invulnerable, untouchable)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -217,12 +229,23 @@ function PlayerService:EnableNoclip(player)
 	humanoid.PlatformStand = false
 	root.Anchored = true
 
-	player:SetAttribute("Invulnerable", true)
+	player:SetAttribute("Invulnerable", invulnerable)
+	player:SetAttribute("Untouchable", untouchable)
 	player:SetAttribute("Flying", true)
 	return true
 end
 
-function PlayerService:DisableNoclip(player)
+function PlayerService:EnableNoclip(player)
+	return self:_beginFlight(player, true, false)
+end
+
+function PlayerService:EnableTestSpectate(player)
+	return self:_beginFlight(player, false, true)
+end
+
+-- Ends either flight mode -- used by /back for both. Doesn't need to know
+-- which one was active: it just restores everything _beginFlight changed.
+function PlayerService:EndFlight(player)
 	local character = player.Character
 	local stash = self._noclipStash[player]
 	if not character or not stash then
@@ -242,6 +265,7 @@ function PlayerService:DisableNoclip(player)
 	end
 
 	player:SetAttribute("Invulnerable", false)
+	player:SetAttribute("Untouchable", false)
 	player:SetAttribute("Flying", false)
 	return true
 end
@@ -307,10 +331,19 @@ function PlayerService:SpawnForRound(player)
 
 	player:SetAttribute("State", "Alive")
 	player:SetAttribute("Invulnerable", false)
+	player:SetAttribute("Untouchable", false) -- safety net in case /spectate2 was left on without /back
 	self.spawnEvent:FireClient(player)
 end
 
 function PlayerService:CatchPlayer(player, monsterId)
+	if player:GetAttribute("Untouchable") then
+		-- /spectate2 (EnableTestSpectate): monsters see and chase this
+		-- player completely normally -- this is the ONLY thing that
+		-- changes, so a real catch attempt (MonsterAI:_onTouch already
+		-- fired, cooldown and all) just has no effect.
+		print(string.format("[Debug] %s would have been caught by %s -- untouchable (test-spectating), no effect.", player.Name, monsterId))
+		return
+	end
 	if player:GetAttribute("State") ~= "Alive" then
 		return
 	end

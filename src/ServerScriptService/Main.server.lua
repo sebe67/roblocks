@@ -102,17 +102,28 @@ local function onChatted(player, message)
 		return
 	end
 
-	-- /spectate and /back -- free-fly noclip for testing: invisible,
-	-- intangible, and invulnerable to monsters (see
-	-- PlayerService:EnableNoclip/DisableNoclip), so you can fly anywhere
-	-- to check on things without being seen, chased, or caught.
+	-- /spectate -- free-fly noclip for testing: invisible, intangible, and
+	-- invulnerable to monsters (PlayerService:EnableNoclip), so you can
+	-- fly anywhere to check on things without being seen, chased, or
+	-- caught.
 	if lower:match("^/spectate%s*$") then
 		local ok = playerService:EnableNoclip(player)
 		print(string.format("[Debug] %s used /spectate -- %s", player.Name, ok and "OK" or "no character to spectate with"))
 		return
 	end
+	-- /spectate2 -- same free-fly mobility, but monsters see and chase you
+	-- exactly like a normal player (PlayerService:EnableTestSpectate) --
+	-- only a catch attempt is a no-op, so you can watch/test detection and
+	-- chase behavior against yourself without it ever actually ending
+	-- your test.
+	if lower:match("^/spectate2%s*$") then
+		local ok = playerService:EnableTestSpectate(player)
+		print(string.format("[Debug] %s used /spectate2 -- %s", player.Name, ok and "OK" or "no character to spectate with"))
+		return
+	end
+	-- /back -- ends either /spectate or /spectate2, restoring normal play.
 	if lower:match("^/back%s*$") then
-		local ok = playerService:DisableNoclip(player)
+		local ok = playerService:EndFlight(player)
 		print(string.format("[Debug] %s used /back -- %s", player.Name, ok and "OK" or "wasn't spectating"))
 		return
 	end

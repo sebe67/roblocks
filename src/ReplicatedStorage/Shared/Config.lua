@@ -108,10 +108,15 @@ Config.Noclip = {
 -- character, toggled server-side, so everyone sees everyone else's beam --
 -- not just a client-only visual effect for its owner.
 Config.Flashlight = {
-	-- 60 is the hard ceiling Roblox enforces on SpotLight.Range (the API
-	-- clamps it regardless of lighting technology) -- this is as far as
-	-- it can throw, up from 45.
-	Range = 60,
+	-- Roblox's docs describe SpotLight.Range as clamped to [0, 60] studs,
+	-- which is why this was previously capped at 60 -- but that's from
+	-- memory, not something verifiable in this environment (no live
+	-- Roblox client here to test against). Set to 120 (2x) per your ask;
+	-- if that clamp is real, this will just render identically to 60 and
+	-- you'll see no change -- if it's not (or no longer is), you'll
+	-- actually see the beam throw twice as far. Report back which one
+	-- happens, since that settles it either way.
+	Range = 120,
 	Angle = 40, -- full cone angle in degrees (SpotLight.Angle), not a half-angle
 	Brightness = 3.5, -- up slightly from 3
 	Color = Color3.fromRGB(255, 250, 220),
