@@ -75,7 +75,7 @@ Config.MeleeAwareRadius = 10
 
 Config.Round = {
 	MinPlayers = 1,
-	IntermissionTime = 15,
+	IntermissionTime = 5, -- was 15; lowered for faster test iteration
 	RespawnInvulnerability = 3,
 	ResultsScreenTime = 14,
 	JumpscareDuration = 2.6,

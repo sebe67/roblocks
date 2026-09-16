@@ -735,13 +735,46 @@ end
 -- old momentum-carrying physics body did when it overshot a target and had
 -- to fight its own existing motion to correct -- the worst case now is
 -- just turning in place for a frame or two, never curling off course.
+-- Since the root is Anchored and every move is a direct CFrame set (see
+-- the comment above), nothing here ever gets stopped by Roblox's own
+-- collision response the way a real physics body would -- a monster can
+-- walk its center point straight through a solid wall and nothing will
+-- object. _hasClearLine (used to decide beeline-vs-pathfind in Chase)
+-- doesn't fully guard against this either: it's a single long ray to the
+-- player, and grazing a corner or a seam gap can read "clear" for one
+-- frame even when the wall between here and there is real -- and once
+-- the monster's origin is even slightly past that wall, later frames'
+-- rays start on the far side and never see it as an obstacle again. This
+-- checks only the short step this one frame is about to take (a few
+-- studs, not the tens of studs to the player), which a stray grazing hit
+-- can't fool the same way, and just refuses to advance into the wall it
+-- finds -- the monster keeps turning and will route around on a later
+-- frame (path replan, or the line clearing once it's turned). It's a
+-- single ray through the monster's own center, on purpose: a doorway
+-- narrower than the monster's model can still get walked through with
+-- some visible side-clipping, which is fine -- only a step whose CENTER
+-- is blocked (i.e. an actual wall, not just a tight-but-passable gap)
+-- gets refused.
+function MonsterAI:_stepBlocked(step)
+	if step.Magnitude < 0.001 then
+		return false
+	end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = self.raycastExclude
+	return workspace:Raycast(self.root.Position, step, params) ~= nil
+end
+
 function MonsterAI:_faceAndMove(dt, desiredDir, speed, moveForward)
 	local currentFacing = self.facing or Vector3.new(self.root.CFrame.LookVector.X, 0, self.root.CFrame.LookVector.Z)
 	self.facing = rotateTowards(currentFacing, desiredDir, TURN_RATE * dt)
 
 	local position = self.root.Position
 	if moveForward then
-		position = position + self.facing * speed * dt
+		local step = self.facing * speed * dt
+		if not self:_stepBlocked(step) then
+			position = position + step
+		end
 	end
 	self.root.CFrame = CFrame.lookAt(position, position + self.facing)
 end

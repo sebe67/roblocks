@@ -166,6 +166,25 @@ in Workspace. A totally blank new place works fine.
   `_faceAndMove` call it was before. Nothing about Patrol needs to change
   either way.
 
+  **Backstop against clipping straight through a wall.** Because movement
+  is a direct `CFrame` set with no physics collision response (previous
+  section), `_hasClearLine` being fooled for even one frame — grazing a
+  corner, a seam gap, anything — had nothing to stop a monster from
+  walking its center point straight into and out the other side of solid
+  geometry; once its origin was past the wall, later frames' rays started
+  on the far side and never saw it as blocking again, so it looked like
+  the monster just walked through the middle of a wall. `_faceAndMove`
+  now casts a second, much shorter ray every frame — just *this frame's*
+  step (a few studs), not the tens of studs to the player — and refuses
+  to advance into whatever it hits. A short ray through solid wall gets
+  hit reliably where a long one grazing a corner might not, so this
+  catches the case the long check misses, and it applies to Patrol too,
+  not just the EXPERIMENTAL Chase pathfinding. It's deliberately a single
+  ray through the monster's own center: a doorway narrower than the
+  model can still be walked through with some visible side-clipping
+  (allowed, on purpose), and only a step whose *center* is blocked — an
+  actual wall — gets refused.
+
   **Patrol** requests a route to a random point on the grid (or an alert
   location) via `PathfindingService` and walks its waypoints. Its
   `WaypointSpacing` was widened from 4 to 16: that setting is the *maximum*
