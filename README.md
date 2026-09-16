@@ -487,39 +487,53 @@ monster's `_onTouch` still fires exactly as normal (cooldown included),
 `CatchPlayer` just no-ops instead of actually killing you, so it's a real
 catch attempt with no consequence rather than an invisible non-event.
 `/back` ends this the same way it ends `/spectate` — see below.
-`EnableTestSpectate` also force-sets your `State` to `"Alive"`:
-`playersToCheck()` requires that regardless of `Invulnerable`, so typing
-`/spectate2` without already being Alive (e.g. straight from the Lobby)
-left every monster unable to see you no matter where you flew — the
-entire point of the command failing silently. That fix alone wasn't
-enough, though: `_canSee`'s facing-cone check compared the target's
-*full 3D* direction against the monster's `LookVector`, and a monster's
-facing (`_faceAndMove`) is always exactly horizontal — it never tilts up
-or down. So hovering noticeably above a monster (exactly what flying up
-near the now-see-through ceiling to scout invites) inflated the angle
-past `sightAngle` even standing right over one. The direction used for
-that check is now flattened first, so altitude no longer counts against
-whether you're within a level gaze's cone — the same fix, incidentally,
-also means a real player jumping can no longer make a monster lose track
-of them purely from the momentary height change.
 
-**Neither fix turned out to be the whole story** — detection was still
-reported broken after both. Rather than guess a third time,
-`MonsterAI.lua` currently has temporary `print("[SightDebug] ...")`
-instrumentation in `playersToCheck` and `_canSee` that only ever fires
-for a player with the `Untouchable` attribute (i.e. test-spectating), so
-it costs nothing in normal play. It reports exactly which check excluded
-you — filtered out of `playersToCheck` entirely (state/character/health/
-invulnerable), out of range, outside the FOV cone, or raycast-blocked —
-or confirms a monster genuinely can see you. Check the server's Output
-window (Studio) or console after reproducing the issue; this is meant to
-be removed once the real cause is confirmed and fixed.
+Getting monsters to actually detect `/spectate2` took three rounds, and
+the first two genuine bugs turned out not to be the real story:
+`EnableTestSpectate` force-sets your `State` to `"Alive"` (`playersToCheck()`
+requires that regardless of `Invulnerable`, so typing `/spectate2` without
+already being Alive left every monster unable to see you), and `_canSee`'s
+facing-cone check now compares a *flattened* direction against the
+monster's `LookVector` instead of the full 3D one (a monster's facing,
+`_faceAndMove`, is always exactly horizontal, so hovering above one used
+to inflate the angle past `sightAngle` even standing right over it — this
+also means a real player jumping can no longer make a monster lose track
+of them from the momentary height change). Both fixes are real and still
+in place, but detection was *still* reported broken after both, with
+[SightDebug] instrumentation (since removed) showing every monster's
+measured distance to the player sitting at 80-400 studs even while the
+player reported hovering right in front of one — proof the two positions
+had nothing to do with each other.
+
+**The actual cause: `/spectate` and `/spectate2` originally shared one
+mobility rig that Anchors the `HumanoidRootPart`, and Anchored parts have
+no network ownership.** `NoclipController.lua` moves you by setting
+`root.CFrame` from a LocalScript; on an Anchored part that write never
+replicates anywhere — you see yourself fly on your own screen, but the
+server's copy of your root never moves at all. That's invisible and
+harmless for `/spectate` (`Invulnerable` already makes every monster
+ignore you, so it truly doesn't matter whether the server ever learns
+your real position), but it's fatal for `/spectate2`, whose entire point
+is for the server-side monster AI to react to where you actually are.
+`EnableTestSpectate` now leaves the root unanchored and calls
+`Humanoid:ChangeState(Enum.HumanoidStateType.Physics)` instead — the same
+technique behind script/vehicle-driven humanoids, which hands ground
+control to the physics engine without the `PlatformStand` ragdoll side
+effect. An unanchored root keeps its default network ownership (your own
+client), so `NoclipController.lua`'s CFrame writes now replicate to the
+server exactly like ordinary movement always has.
+`NoclipController.lua` also now zeros `AssemblyLinearVelocity` right
+after every reposition — a direct `CFrame` set doesn't clear existing
+velocity on its own, so without this, gravity would keep accumulating
+real velocity on the now-unanchored `/spectate2` root between each
+frame's override.
 
 `EnableNoclip` and `EnableTestSpectate` share one underlying
-`_beginFlight` (`PlayerService.lua`): identical mobility rig, differing
-only in which attributes they set (`Invulnerable` for `/spectate`,
-`Untouchable` for `/spectate2`). `/back` calls one shared `EndFlight` that
-undoes either mode without needing to know which was active.
+`_beginFlight` (`PlayerService.lua`) for the invisible/intangible setup,
+but now diverge on root physics for exactly the reason above. `/back`
+calls one shared `EndFlight` that undoes either mode without needing to
+know which was active — including recovering a humanoid `/spectate2` left
+in the `Physics` state back to normal ground control.
 
 Both flight modes also make the ceiling see-through so monsters are easy
 to spot from above (`NoclipController.lua`'s `setCeilingXray`) —

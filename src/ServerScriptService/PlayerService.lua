@@ -173,38 +173,55 @@ end
 -- free-fly noclip mode for testing, distinct from the death-flow
 -- "Spectating" State above -- that one locks your camera onto another
 -- alive player, this one lets your own character fly through walls. Both
--- commands share the exact same movement rig (_beginFlight/_endFlight);
--- they only differ in what happens once you're flying:
+-- commands share the exact same invisible/intangible setup
+-- (CanCollide=false/Transparency=1 on every part, same stash-and-restore
+-- shape as _hideCharacter) via _beginFlight, but END UP WITH DIFFERENT
+-- ROOT PHYSICS, because they have opposite requirements for whether the
+-- server needs to know your real position:
 --   /spectate  (EnableNoclip)      -- Invulnerable=true, so MonsterAI's
 --                                     playersToCheck() filters you out
 --                                     before any sight/catch check runs.
---                                     Fully invisible to monster AI.
---   /spectate2 (EnableTestSpectate) -- Invulnerable stays false, so
---                                     monsters see and chase you exactly
---                                     like a normal player would -- the
---                                     Untouchable attribute set here just
---                                     makes CatchPlayer below a no-op, so
---                                     a "catch" never actually kills you.
---                                     For testing chase/detection against
---                                     yourself without ending your test.
+--                                     Fully invisible to monster AI, so it
+--                                     genuinely does not matter whether
+--                                     the server ever learns your real
+--                                     position -- Anchored is fine (and
+--                                     is what actually fixed this mode's
+--                                     glitchiness, see below).
+--   /spectate2 (EnableTestSpectate) -- Invulnerable stays false: the
+--                                     entire point is for monsters to
+--                                     genuinely detect and chase you, so
+--                                     the server MUST know your real
+--                                     position. Anchored breaks exactly
+--                                     that: an Anchored part has no
+--                                     network ownership, so
+--                                     NoclipController.lua's client-side
+--                                     root.CFrame writes never replicate
+--                                     to the server at all -- you see
+--                                     yourself fly on your own screen,
+--                                     but the server's copy of your root
+--                                     never moves. That's precisely why
+--                                     hovering right in front of a
+--                                     monster still measured ~160 studs
+--                                     server-side: only the monster's own
+--                                     patrol was moving; you, as far as
+--                                     the server knew, weren't.
 --
--- Invisible+intangible is just CanCollide=false/Transparency=1 on every
--- part (same stash-and-restore shape as _hideCharacter).
---
--- The first version of this drove flight by setting AssemblyLinearVelocity
+-- The first version of both drove flight by setting AssemblyLinearVelocity
 -- every frame with humanoid.PlatformStand = true, and it was glitchy and
 -- still didn't reliably pass through walls. Root cause: PlatformStand
 -- doesn't just suspend walk control, it ragdolls the rig (every limb's
 -- joint goes loose), and our velocity writes to only the root were
--- fighting that ragdoll physics -- plus a real, unanchored, gravity-
--- affected body can still collide with things through other means even
--- with CanCollide off on its own parts (getting shoved by whatever it's
--- overlapping). Anchoring the HumanoidRootPart instead removes the WHOLE
--- rig from physics simulation entirely -- no gravity, no ragdoll, no
--- collision response possible, nothing to fight -- exactly the same fix
--- as the monster movement rebuild (MonsterAI.lua's _faceAndMove). With the
--- root Anchored, NoclipController.lua becomes the only thing moving the
--- character at all, by setting its CFrame directly every frame.
+-- fighting that ragdoll physics. Anchoring fixed /spectate outright (no
+-- gravity, no ragdoll, no collision response possible, nothing to fight
+-- -- exactly the same fix as the monster movement rebuild,
+-- MonsterAI.lua's _faceAndMove) -- but for /spectate2 specifically, we
+-- need the rig to stay a normal, network-owned physics object (so this
+-- client's CFrame writes keep replicating like ordinary movement always
+-- has) while STILL not fighting the Humanoid's own ground controller.
+-- Humanoid:ChangeState(Physics) is the correct tool for exactly that: it
+-- hands ground control to a script/physics without the PlatformStand
+-- ragdoll side effect -- it's the same technique behind vehicle seats and
+-- other script-driven humanoids.
 function PlayerService:_beginFlight(player, invulnerable, untouchable)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -227,7 +244,12 @@ function PlayerService:_beginFlight(player, invulnerable, untouchable)
 	self._noclipStash[player] = stash
 
 	humanoid.PlatformStand = false
-	root.Anchored = true
+	if untouchable then
+		root.Anchored = false
+		humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+	else
+		root.Anchored = true
+	end
 
 	player:SetAttribute("Invulnerable", invulnerable)
 	player:SetAttribute("Untouchable", untouchable)
@@ -269,6 +291,14 @@ function PlayerService:EndFlight(player)
 	local root = character:FindFirstChild("HumanoidRootPart")
 	if root then
 		root.Anchored = false
+		root.AssemblyLinearVelocity = Vector3.new()
+	end
+	-- Recovers a humanoid /spectate2 left in the Physics state back to
+	-- normal ground control -- harmless no-op if it was /spectate's
+	-- Anchored root instead, which never touched humanoid state.
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
 	end
 
 	player:SetAttribute("Invulnerable", false)

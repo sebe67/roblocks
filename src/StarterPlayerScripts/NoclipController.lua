@@ -1,20 +1,30 @@
 -- Debug-only free-fly for the /spectate, /spectate2, and /back chat
 -- commands (Main.server.lua). The server (PlayerService:_beginFlight/
 -- EndFlight) only flips state -- makes the character invisible/
--- intangible, sets the "Flying" attribute, and Anchors the
--- HumanoidRootPart, which takes the whole rig out of physics entirely (no
--- gravity, no collision response, nothing left for anything to fight).
--- This script is what actually moves the character while "Flying" is
--- true: it directly translates root.CFrame every frame by a
--- camera-relative direction, since an Anchored part won't go anywhere on
--- its own. An earlier version drove flight through AssemblyLinearVelocity
--- with PlatformStand instead of Anchored, and that fought the
--- PlatformStand ragdoll physics -- glitchy, and still capable of getting
--- hung up on walls. Direct CFrame translation on an Anchored part has
--- nothing to fight: no velocity, no collision resolution, so it goes
--- exactly where it's told, through anything. It also makes the ceiling
--- see-through (client-only, see setCeilingXray below) so monsters are
--- easier to spot from above while flying.
+-- intangible and sets the "Flying" attribute; this script is what
+-- actually moves the character while "Flying" is true, by directly
+-- translating root.CFrame every frame by a camera-relative direction.
+--
+-- /spectate Anchors the root server-side (nothing to fight -- no
+-- gravity, no collision response possible -- so it goes exactly where
+-- it's told, through anything). /spectate2 deliberately does NOT anchor
+-- (see _beginFlight's comment for why: the server needs your real
+-- position for monster detection to mean anything, and an Anchored part
+-- has no network ownership, so this script's CFrame writes would never
+-- replicate). This script doesn't need to know which mode is active --
+-- it always sets AssemblyLinearVelocity to zero right after positioning,
+-- which is a harmless no-op on an Anchored part but, on /spectate2's
+-- unanchored one, stops gravity from accumulating real velocity between
+-- our CFrame overrides (a direct CFrame set doesn't clear existing
+-- velocity on its own, so without this the character would pick up a
+-- growing downward velocity fighting each frame's reposition).
+--
+-- An earlier version drove flight through AssemblyLinearVelocity with
+-- PlatformStand instead of Anchored, and that fought the PlatformStand
+-- ragdoll physics -- glitchy, and still capable of getting hung up on
+-- walls. It also makes the ceiling see-through (client-only, see
+-- setCeilingXray below) so monsters are easier to spot from above while
+-- flying.
 
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -87,6 +97,7 @@ function NoclipController.Init(context)
 		end
 
 		root.CFrame = root.CFrame + move * Config.Noclip.FlySpeed * dt
+		root.AssemblyLinearVelocity = Vector3.new()
 	end
 
 	local function startFlying()
