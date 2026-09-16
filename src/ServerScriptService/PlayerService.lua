@@ -237,8 +237,9 @@ function PlayerService:_beginFlight(player, invulnerable, untouchable)
 	local stash = {}
 	for _, part in ipairs(character:GetDescendants()) do
 		if part:IsA("BasePart") then
-			stash[part] = { Transparency = part.Transparency, CanCollide = part.CanCollide }
+			stash[part] = { Transparency = part.Transparency, CanCollide = part.CanCollide, CanQuery = part.CanQuery }
 			part.CanCollide = false
+			part.CanQuery = false
 			part.Transparency = 1
 		end
 	end
@@ -322,6 +323,7 @@ function PlayerService:EndFlight(player)
 	for part, original in pairs(stash) do
 		if part and part.Parent then
 			part.CanCollide = original.CanCollide
+			part.CanQuery = original.CanQuery
 			part.Transparency = original.Transparency
 		end
 	end

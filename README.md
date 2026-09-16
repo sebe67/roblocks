@@ -554,6 +554,26 @@ destroying the constraint/attachment, and recovering a humanoid
 `/spectate2` left in the `Physics` state back to normal ground control,
 all as no-ops for `/spectate`, which never created any of them.
 
+After that fix, walls and the gravity-sink were confirmed gone, but the
+ceiling specifically still blocked `/spectate2`. This one's less certain
+than the others above — `CanCollide = false` on every one of your own
+character's parts should, per how Roblox collision works, prevent contact
+with *anything* regardless of the other part's own `CanCollide`, so there
+isn't a fully confirmed code-level explanation. What's shipped is
+defensive hardening rather than a proven root cause: `_beginFlight` now
+also stashes and clears `CanQuery` (not just `CanCollide`/`Transparency`)
+on every character part, and `NoclipController.lua`'s per-frame
+`stepFlight` reasserts `CanCollide = false` on every character part every
+single frame (not just once at flight start), in case something —
+most likely the humanoid's own state machine reacting around the
+`StateChanged` reassertion above — was silently flipping it back on for
+whichever part happened to be leading the upward move. If the roof is
+still solid after this, the next real suspect is a manually-placed Studio
+object (an old Baseplate or roof piece that predates the Rojo-managed
+`Ceiling` folder) that `/spectate`'s Anchored root would have always
+skipped — Anchored parts don't participate in collision responses the
+same way — but `/spectate2`'s real physics body wouldn't.
+
 Both flight modes also make the ceiling see-through so monsters are easy
 to spot from above (`NoclipController.lua`'s `setCeilingXray`) —
 client-only via `LocalTransparencyModifier` on every part in the `Store`

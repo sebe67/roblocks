@@ -81,6 +81,19 @@ function NoclipController.Init(context)
 			return
 		end
 
+		-- Defensive: something (Humanoid's own ground-detection logic
+		-- reacting to StateChanged, most likely) can silently flip
+		-- CanCollide back on for a character part, which reads as
+		-- "can't fly through the ceiling" if it happens to be a part
+		-- that leads a vertical move (root, but also head/limbs when
+		-- looking upward). Reassert on every part every frame rather
+		-- than trusting the one-time value _beginFlight set.
+		for _, part in ipairs(character:GetDescendants()) do
+			if part:IsA("BasePart") and part.CanCollide then
+				part.CanCollide = false
+			end
+		end
+
 		local move = Vector3.new()
 		if UserInputService:IsKeyDown(Enum.KeyCode.W) then
 			move += camera.CFrame.LookVector
