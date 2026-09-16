@@ -489,7 +489,17 @@ catch attempt with no consequence rather than an invisible non-event.
 `playersToCheck()` requires that regardless of `Invulnerable`, so typing
 `/spectate2` without already being Alive (e.g. straight from the Lobby)
 left every monster unable to see you no matter where you flew — the
-entire point of the command failing silently.
+entire point of the command failing silently. That fix alone wasn't
+enough, though: `_canSee`'s facing-cone check compared the target's
+*full 3D* direction against the monster's `LookVector`, and a monster's
+facing (`_faceAndMove`) is always exactly horizontal — it never tilts up
+or down. So hovering noticeably above a monster (exactly what flying up
+near the now-see-through ceiling to scout invites) inflated the angle
+past `sightAngle` even standing right over one. The direction used for
+that check is now flattened first, so altitude no longer counts against
+whether you're within a level gaze's cone — the same fix, incidentally,
+also means a real player jumping can no longer make a monster lose track
+of them purely from the momentary height change.
 
 `EnableNoclip` and `EnableTestSpectate` share one underlying
 `_beginFlight` (`PlayerService.lua`): identical mobility rig, differing

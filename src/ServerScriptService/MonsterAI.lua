@@ -373,11 +373,22 @@ function MonsterAI:_canSee(targetRoot)
 	-- purely because its facing lags its own movement direction by a few
 	-- degrees (steering, not intent).
 	if dist > Config.MeleeAwareRadius then
-		local dir = toTarget.Unit
-		local look = self.root.CFrame.LookVector
-		local angle = math.deg(math.acos(math.clamp(look:Dot(dir), -1, 1)))
-		if angle > def.sightAngle then
-			return false
+		-- Flattened on purpose: a monster's facing (_faceAndMove) is
+		-- always exactly horizontal, it never tilts up or down, so
+		-- judging the cone against the FULL 3D direction penalized pure
+		-- altitude the same as it would an actual behind-you offset --
+		-- hovering well above a monster (flying near the now-see-through
+		-- ceiling, in particular) could push the angle past sightAngle
+		-- even standing right over it, which is what made /spectate2 look
+		-- undetectable no matter where you floated. Height genuinely
+		-- doesn't affect whether you're in a level gaze's cone.
+		local flatDir = Vector3.new(toTarget.X, 0, toTarget.Z)
+		if flatDir.Magnitude > 0.01 then
+			local look = self.root.CFrame.LookVector
+			local angle = math.deg(math.acos(math.clamp(look:Dot(flatDir.Unit), -1, 1)))
+			if angle > def.sightAngle then
+				return false
+			end
 		end
 	end
 
