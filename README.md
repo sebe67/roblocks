@@ -520,20 +520,39 @@ is for the server-side monster AI to react to where you actually are.
 technique behind script/vehicle-driven humanoids, which hands ground
 control to the physics engine without the `PlatformStand` ragdoll side
 effect. An unanchored root keeps its default network ownership (your own
-client), so `NoclipController.lua`'s CFrame writes now replicate to the
-server exactly like ordinary movement always has.
-`NoclipController.lua` also now zeros `AssemblyLinearVelocity` right
-after every reposition — a direct `CFrame` set doesn't clear existing
-velocity on its own, so without this, gravity would keep accumulating
-real velocity on the now-unanchored `/spectate2` root between each
-frame's override.
+client), so `NoclipController.lua`'s writes now replicate to the server
+exactly like ordinary movement always has.
+
+That alone reintroduced two symptoms once the root was genuinely
+physics-simulated again: slowly sinking (gravity) and getting stuck on
+walls despite `CanCollide` being false everywhere. Cause: `ChangeState`
+only sets the humanoid's state *once* — Roblox's own state machine can
+silently revert away from it on its own (its ground/Freefall detection
+kicking back in once it notices there's no floor under an unanchored
+body), quietly reintroducing the exact fight this was meant to avoid, in
+both directions at once. Two fixes: `_beginFlight` now keeps a
+`Humanoid.StateChanged` connection alive for the whole flight that
+immediately reasserts `Physics` state if it ever changes away, and
+movement itself no longer works by writing `CFrame`/`AssemblyLinearVelocity`
+once per rendered frame — `_beginFlight` attaches a real `LinearVelocity`
+constraint (`NoclipVelocity`, via a `NoclipAttachment`) to the root, which
+`NoclipController.lua` now points at the desired velocity each frame
+instead. A constraint is evaluated by the physics engine on *every*
+physics step, not just once per render, so there's no window left for
+gravity to accumulate a visible drift in between corrections the way a
+script-driven write always has one. `/spectate`'s Anchored root is
+untouched by any of this — Anchored parts ignore velocity/constraints
+entirely, so `NoclipController.lua` still falls back to direct `CFrame`
+translation whenever `NoclipVelocity` doesn't exist.
 
 `EnableNoclip` and `EnableTestSpectate` share one underlying
 `_beginFlight` (`PlayerService.lua`) for the invisible/intangible setup,
 but now diverge on root physics for exactly the reason above. `/back`
 calls one shared `EndFlight` that undoes either mode without needing to
-know which was active — including recovering a humanoid `/spectate2` left
-in the `Physics` state back to normal ground control.
+know which was active — disconnecting the `StateChanged` listener,
+destroying the constraint/attachment, and recovering a humanoid
+`/spectate2` left in the `Physics` state back to normal ground control,
+all as no-ops for `/spectate`, which never created any of them.
 
 Both flight modes also make the ceiling see-through so monsters are easy
 to spot from above (`NoclipController.lua`'s `setCeilingXray`) —

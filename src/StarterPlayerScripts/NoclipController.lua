@@ -2,22 +2,31 @@
 -- commands (Main.server.lua). The server (PlayerService:_beginFlight/
 -- EndFlight) only flips state -- makes the character invisible/
 -- intangible and sets the "Flying" attribute; this script is what
--- actually moves the character while "Flying" is true, by directly
--- translating root.CFrame every frame by a camera-relative direction.
+-- actually moves the character while "Flying" is true.
 --
--- /spectate Anchors the root server-side (nothing to fight -- no
--- gravity, no collision response possible -- so it goes exactly where
--- it's told, through anything). /spectate2 deliberately does NOT anchor
--- (see _beginFlight's comment for why: the server needs your real
--- position for monster detection to mean anything, and an Anchored part
--- has no network ownership, so this script's CFrame writes would never
--- replicate). This script doesn't need to know which mode is active --
--- it always sets AssemblyLinearVelocity to zero right after positioning,
--- which is a harmless no-op on an Anchored part but, on /spectate2's
--- unanchored one, stops gravity from accumulating real velocity between
--- our CFrame overrides (a direct CFrame set doesn't clear existing
--- velocity on its own, so without this the character would pick up a
--- growing downward velocity fighting each frame's reposition).
+-- The two modes need genuinely different movement, because they end up
+-- with different root physics server-side:
+--   /spectate  -- root stays Anchored (nothing server-side needs your
+--                  real position, so this is fine, and is what fixed
+--                  this mode's original glitchiness). Anchored parts
+--                  ignore velocity/constraints entirely, so direct
+--                  CFrame translation is the only thing that moves one.
+--   /spectate2 -- root stays unanchored (it needs to keep its default
+--                  network ownership so its real position replicates to
+--                  the server -- see _beginFlight's comment). This
+--                  script drives it through the LinearVelocity
+--                  constraint _beginFlight attached to it
+--                  ("NoclipVelocity") instead of writing CFrame
+--                  directly: that constraint is evaluated by the physics
+--                  engine every physics step, not just once per rendered
+--                  frame, so gravity never gets a window between our
+--                  corrections to accumulate a visible sink in -- which
+--                  a once-per-render CFrame/velocity write couldn't
+--                  fully prevent.
+--
+-- Detecting which mode is active is just "does NoclipVelocity exist,"
+-- so this script doesn't need to know about Untouchable/Invulnerable at
+-- all.
 --
 -- An earlier version drove flight through AssemblyLinearVelocity with
 -- PlatformStand instead of Anchored, and that fought the PlatformStand
@@ -96,8 +105,12 @@ function NoclipController.Init(context)
 			move = move.Unit
 		end
 
-		root.CFrame = root.CFrame + move * Config.Noclip.FlySpeed * dt
-		root.AssemblyLinearVelocity = Vector3.new()
+		local velocity = root:FindFirstChild("NoclipVelocity")
+		if velocity then
+			velocity.VectorVelocity = move * Config.Noclip.FlySpeed
+		else
+			root.CFrame = root.CFrame + move * Config.Noclip.FlySpeed * dt
+		end
 	end
 
 	local function startFlying()

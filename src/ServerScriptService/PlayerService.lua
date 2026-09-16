@@ -17,6 +17,7 @@ function PlayerService.new(maze)
 	self.onStateChanged = nil -- set by GameState
 	self._hiddenStash = {}
 	self._noclipStash = {}
+	self._flightConns = {}
 
 	self.jumpscareEvent = Net.GetEvent("Jumpscare")
 	self.deathMenuEvent = Net.GetEvent("ShowDeathMenu")
@@ -247,6 +248,44 @@ function PlayerService:_beginFlight(player, invulnerable, untouchable)
 	if untouchable then
 		root.Anchored = false
 		humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+		-- Humanoid:ChangeState only sets the state NOW -- it doesn't lock
+		-- it there. Roblox's humanoid state machine can silently revert
+		-- away on its own (its own ground/Freefall detection kicking back
+		-- in once it notices there's no floor under an unanchored,
+		-- CanCollide=false body), quietly reintroducing exactly the fight
+		-- this was meant to avoid. Reasserting it for the whole flight is
+		-- what actually stops that revert from resurfacing as gravity
+		-- sinking you or the humanoid's own ground-seeking control
+		-- resisting your movement (reads as "stuck," including on walls).
+		local conn = humanoid.StateChanged:Connect(function(_, new)
+			if new ~= Enum.HumanoidStateType.Physics then
+				humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+			end
+		end)
+		self._flightConns[player] = conn
+
+		-- The actual fix for gravity sinking: a LinearVelocity constraint
+		-- is evaluated by the physics engine on every physics step, not
+		-- just once per rendered frame the way a script setting
+		-- CFrame/AssemblyLinearVelocity in RenderStepped is -- so there's
+		-- no window between corrections for gravity to accumulate a
+		-- visible drift in. The root stays network-owned by the flying
+		-- client (unanchored, unowned-by-anyone-else, the default for
+		-- your own character), so the resulting motion still replicates
+		-- to the server exactly like ordinary movement always has --
+		-- NoclipController.lua just points this at your desired velocity
+		-- each frame instead of writing CFrame directly.
+		local attachment = Instance.new("Attachment")
+		attachment.Name = "NoclipAttachment"
+		attachment.Parent = root
+
+		local velocity = Instance.new("LinearVelocity")
+		velocity.Name = "NoclipVelocity"
+		velocity.Attachment0 = attachment
+		velocity.MaxForce = math.huge
+		velocity.VectorVelocity = Vector3.new()
+		velocity.RelativeTo = Enum.ActuatorRelativeTo.World
+		velocity.Parent = root
 	else
 		root.Anchored = true
 	end
@@ -288,10 +327,27 @@ function PlayerService:EndFlight(player)
 	end
 	self._noclipStash[player] = nil
 
+	-- Stops /spectate2's StateChanged listener from re-forcing Physics
+	-- state after we're done with it -- harmless no-op for /spectate,
+	-- which never created one.
+	local conn = self._flightConns[player]
+	if conn then
+		conn:Disconnect()
+		self._flightConns[player] = nil
+	end
+
 	local root = character:FindFirstChild("HumanoidRootPart")
 	if root then
 		root.Anchored = false
 		root.AssemblyLinearVelocity = Vector3.new()
+		local attachment = root:FindFirstChild("NoclipAttachment")
+		if attachment then
+			attachment:Destroy()
+		end
+		local velocity = root:FindFirstChild("NoclipVelocity")
+		if velocity then
+			velocity:Destroy()
+		end
 	end
 	-- Recovers a humanoid /spectate2 left in the Physics state back to
 	-- normal ground control -- harmless no-op if it was /spectate's
