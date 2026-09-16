@@ -434,13 +434,20 @@ function MonsterAI:_updateLightsOut()
 	local cx = math.clamp(math.floor(self.root.Position.X / cellSize) + 1, 1, maze.gridWidth)
 	local cy = math.clamp(math.floor(self.root.Position.Z / cellSize) + 1, 1, maze.gridHeight)
 	local radius = Config.LightsOutRadius
+	-- How many cells out the scan needs to reach to guarantee covering a
+	-- circle of this radius, regardless of exactly where within his own
+	-- cell he's standing -- was hardcoded to 1 (a fixed 3x3) back when
+	-- LightsOutRadius (20) comfortably fit inside one cellSize (22); now
+	-- that it's bigger than a cell, a fixed 3x3 could miss fixtures near
+	-- the edge of range.
+	local cellReach = math.ceil(radius / cellSize)
 
 	self.litFixtures = self.litFixtures or {}
 	self.pendingRelease = self.pendingRelease or {}
 	local stillNear = {}
 
-	for dx = -1, 1 do
-		for dy = -1, 1 do
+	for dx = -cellReach, cellReach do
+		for dy = -cellReach, cellReach do
 			local fx, fy = cx + dx, cy + dy
 			if fx >= 1 and fx <= maze.gridWidth and fy >= 1 and fy <= maze.gridHeight then
 				local fixture = fixturesFolder:FindFirstChild(string.format("Fixture_%d_%d", fx, fy))

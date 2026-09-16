@@ -363,7 +363,7 @@ in Workspace. A totally blank new place works fine.
 | Barney | slow, huge | loud footsteps (bigger hearing radius) — telegraphed |
 | The Grinch | fast | faster and sees further in cells whose ceiling fixture is actually dead |
 | Kung Fu Panda | medium | occasional straight-line dash burst |
-| SpongeBob | medium | **kills every working light near him as he moves** (they come back ~15s after he leaves, see below) |
+| SpongeBob | medium | **kills every working light within 40 studs of him as he moves** (they come back ~15s after he leaves, see below; radius doubled from 20 per request — the actual darkened area is 4x bigger, not 2x) |
 | Dora | medium | **spotting you alerts every other monster to your last position** |
 | Tung Tung Tung Sahur | slow patrol, decent chase, huge and loud | occasional speed burst while chasing (like Peppa/Po) that also thuds the ground loud enough to draw any monster within 45 studs toward the commotion |
 
@@ -485,12 +485,24 @@ monster's `_onTouch` still fires exactly as normal (cooldown included),
 `CatchPlayer` just no-ops instead of actually killing you, so it's a real
 catch attempt with no consequence rather than an invisible non-event.
 `/back` ends this the same way it ends `/spectate` — see below.
+`EnableTestSpectate` also force-sets your `State` to `"Alive"`:
+`playersToCheck()` requires that regardless of `Invulnerable`, so typing
+`/spectate2` without already being Alive (e.g. straight from the Lobby)
+left every monster unable to see you no matter where you flew — the
+entire point of the command failing silently.
 
 `EnableNoclip` and `EnableTestSpectate` share one underlying
 `_beginFlight` (`PlayerService.lua`): identical mobility rig, differing
 only in which attributes they set (`Invulnerable` for `/spectate`,
 `Untouchable` for `/spectate2`). `/back` calls one shared `EndFlight` that
 undoes either mode without needing to know which was active.
+
+Both flight modes also make the ceiling see-through so monsters are easy
+to spot from above (`NoclipController.lua`'s `setCeilingXray`) —
+client-only via `LocalTransparencyModifier` on every part in the `Store`
+model's `Ceiling` folder, which overrides how those parts render for just
+that one client and never replicates, so nobody else's view of the roof
+changes.
 
 The first version of this drove flight with `AssemblyLinearVelocity` and
 `Humanoid.PlatformStand = true`, and it was glitchy and still didn't

@@ -63,8 +63,9 @@ Config.Blackout = {
 
 -- SpongeBob's "lightsOut" quirk (MonsterAI): kills every working light
 -- within LightsOutRadius studs of him as he moves, and lets each one turn
--- back on this many seconds after he's no longer near it.
-Config.LightsOutRadius = 20
+-- back on this many seconds after he's no longer near it. Doubled from
+-- 20 -- since this is a radius, the actual darkened area is 4x bigger.
+Config.LightsOutRadius = 40
 Config.LightsOutGrace = 15
 
 -- Within this many studs of a chase target, MonsterAI:_canSee skips the

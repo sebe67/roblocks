@@ -240,6 +240,13 @@ function PlayerService:EnableNoclip(player)
 end
 
 function PlayerService:EnableTestSpectate(player)
+	-- MonsterAI's playersToCheck() only ever considers players whose
+	-- State is "Alive" -- if you type /spectate2 without already being
+	-- Alive (e.g. still sitting in the Lobby), you'd stay invisible to
+	-- every monster no matter where you flew, which defeats the entire
+	-- point of this command. Force it here so /spectate2 always makes you
+	-- a valid target regardless of what state you were in before.
+	player:SetAttribute("State", "Alive")
 	return self:_beginFlight(player, false, true)
 end
 
