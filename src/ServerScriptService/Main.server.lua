@@ -71,7 +71,11 @@ local gameState = GameState.new(maze, playerService, monsters, minigameService, 
 local DEBUG_USERNAME = "Besussero"
 
 local function onChatted(player, message)
-	if player.Name ~= DEBUG_USERNAME then
+	-- Compared case-insensitively: an exact-case check silently failed if
+	-- your account's stored casing doesn't match what's typed here
+	-- exactly, which is exactly what made every debug command look broken
+	-- ("username is besussero" vs. this being "Besussero").
+	if player.Name:lower() ~= DEBUG_USERNAME:lower() then
 		return
 	end
 	local lower = message:lower()
