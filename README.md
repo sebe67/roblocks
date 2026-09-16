@@ -48,7 +48,9 @@ in Workspace. A totally blank new place works fine.
 - **Procedural store** (`MazeGenerator.lua`): not a uniform small-cell maze
   but a series of big rectangular rooms (`Config.Maze.MinRoomSize`-
   `MaxRoomSize`, 3-5 base cells per side — 66-110 studs) greedily tiled
-  across a 22x22 grid, each room a single open floor plan inside. A
+  across a 28x28 grid (`GridWidth`/`GridHeight`, up from 22x22 — 1.25x the
+  side length per request, so the actual floor area grows ~1.6x), each
+  room a single open floor plan inside. A
   recursive-backtracker spanning walk over the *rooms* (not fine cells)
   picks one connector per adjacent room pair — most are a narrow doorway
   (`Config.Maze.DoorwayWidth`), some (`HallwayChance`) are a wider open
@@ -500,6 +502,18 @@ that check is now flattened first, so altitude no longer counts against
 whether you're within a level gaze's cone — the same fix, incidentally,
 also means a real player jumping can no longer make a monster lose track
 of them purely from the momentary height change.
+
+**Neither fix turned out to be the whole story** — detection was still
+reported broken after both. Rather than guess a third time,
+`MonsterAI.lua` currently has temporary `print("[SightDebug] ...")`
+instrumentation in `playersToCheck` and `_canSee` that only ever fires
+for a player with the `Untouchable` attribute (i.e. test-spectating), so
+it costs nothing in normal play. It reports exactly which check excluded
+you — filtered out of `playersToCheck` entirely (state/character/health/
+invulnerable), out of range, outside the FOV cone, or raycast-blocked —
+or confirms a monster genuinely can see you. Check the server's Output
+window (Studio) or console after reproducing the issue; this is meant to
+be removed once the real cause is confirmed and fixed.
 
 `EnableNoclip` and `EnableTestSpectate` share one underlying
 `_beginFlight` (`PlayerService.lua`): identical mobility rig, differing

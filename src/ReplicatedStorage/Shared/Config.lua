@@ -11,8 +11,8 @@ local Config = {}
 
 Config.Maze = {
 	CellSize = 22, -- base cell unit; a room is MinRoomSize-MaxRoomSize of these per side
-	GridWidth = 22, -- doubled side length (4x area) to spread 8 monsters across more space
-	GridHeight = 22,
+	GridWidth = 28, -- 22 * 1.25 (rounded), per request -- side length, so the actual floor area grows ~1.6x
+	GridHeight = 28,
 	WallHeight = 12,
 	WallThickness = 1,
 	MinRoomSize = 3, -- rooms are 3-5 base cells per side (66-110 studs) -- big open spaces, not a mini-maze

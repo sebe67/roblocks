@@ -325,15 +325,33 @@ function MonsterAI:_onTouch(hit)
 	self.chaseCurrentPath = nil
 end
 
+-- TEMPORARY (remove alongside the _canSee instrumentation below): this
+-- function runs once per monster per frame, so its own debug print is
+-- throttled to at most once a second to avoid flooding the console.
+local lastPlayersToCheckDebugAt = 0
+
 local function playersToCheck()
 	local list = {}
+	local shouldDebug = os.clock() - lastPlayersToCheckDebugAt > 1
 	for _, player in ipairs(Players:GetPlayers()) do
-		if player:GetAttribute("State") == "Alive" and player.Character then
+		local isUntouchable = player:GetAttribute("Untouchable")
+		local state = player:GetAttribute("State")
+		if state == "Alive" and player.Character then
 			local hum = player.Character:FindFirstChildOfClass("Humanoid")
 			local root = player.Character:FindFirstChild("HumanoidRootPart")
-			if hum and root and hum.Health > 0 and not player:GetAttribute("Invulnerable") then
+			local invulnerable = player:GetAttribute("Invulnerable")
+			if hum and root and hum.Health > 0 and not invulnerable then
 				table.insert(list, { player = player, root = root })
+			elseif isUntouchable and shouldDebug then
+				print(string.format(
+					"[SightDebug] %s excluded from playersToCheck: hum=%s root=%s health=%s invulnerable=%s",
+					player.Name, tostring(hum ~= nil), tostring(root ~= nil), tostring(hum and hum.Health), tostring(invulnerable)
+				))
+				lastPlayersToCheckDebugAt = os.clock()
 			end
+		elseif isUntouchable and shouldDebug then
+			print(string.format("[SightDebug] %s excluded from playersToCheck: State=%s hasCharacter=%s", player.Name, tostring(state), tostring(player.Character ~= nil)))
+			lastPlayersToCheckDebugAt = os.clock()
 		end
 	end
 	return list
@@ -354,17 +372,37 @@ function MonsterAI:_rayBlocked(targetRoot, toTarget)
 	return result ~= nil and not result.Instance:IsDescendantOf(targetRoot.Parent)
 end
 
+-- TEMPORARY (remove once /spectate2 detection is confirmed working):
+-- two previous fixes (forcing State="Alive", flattening the FOV check)
+-- didn't resolve "monsters still don't see me" for /spectate2, so rather
+-- than guess a third time, this reports exactly which check fails --
+-- only for a player with the Untouchable attribute (i.e. test-
+-- spectating), so it's silent and free in normal play. Check the
+-- server's Output window (Studio) or console after testing again.
+local function debugSightTarget(targetRoot)
+	local character = targetRoot.Parent
+	local plr = character and Players:GetPlayerFromCharacter(character)
+	if plr and plr:GetAttribute("Untouchable") then
+		return plr
+	end
+	return nil
+end
+
 function MonsterAI:_canSee(targetRoot)
 	local def = self.def
 	local myPos = self.root.Position
 	local toTarget = targetRoot.Position - myPos
 	local dist = toTarget.Magnitude
+	local debugPlayer = debugSightTarget(targetRoot)
 
 	local range = def.sightRange
 	if def.quirk == "darkBoost" and self:_inDarkCell() then
 		range = range * 1.4
 	end
 	if dist > range then
+		if debugPlayer then
+			print(string.format("[SightDebug] %s CANNOT see %s: out of range (dist=%.1f, range=%.1f)", def.id, debugPlayer.Name, dist, range))
+		end
 		return false
 	end
 
@@ -387,12 +425,23 @@ function MonsterAI:_canSee(targetRoot)
 			local look = self.root.CFrame.LookVector
 			local angle = math.deg(math.acos(math.clamp(look:Dot(flatDir.Unit), -1, 1)))
 			if angle > def.sightAngle then
+				if debugPlayer then
+					print(string.format("[SightDebug] %s CANNOT see %s: outside FOV (angle=%.1f, sightAngle=%.1f, dist=%.1f)", def.id, debugPlayer.Name, angle, def.sightAngle, dist))
+				end
 				return false
 			end
 		end
 	end
 
-	return not self:_rayBlocked(targetRoot, toTarget)
+	local blocked = self:_rayBlocked(targetRoot, toTarget)
+	if debugPlayer then
+		if blocked then
+			print(string.format("[SightDebug] %s CANNOT see %s: raycast blocked (dist=%.1f)", def.id, debugPlayer.Name, dist))
+		else
+			print(string.format("[SightDebug] %s CAN see %s (dist=%.1f)", def.id, debugPlayer.Name, dist))
+		end
+	end
+	return not blocked
 end
 
 -- EXPERIMENTAL (Chase obstacle-awareness, see the constants near the top
