@@ -11,6 +11,7 @@ local PathfindingService = game:GetService("PathfindingService")
 local Players = game:GetService("Players")
 local CollectionService = game:GetService("CollectionService")
 local SoundService = game:GetService("SoundService")
+local ServerStorage = game:GetService("ServerStorage")
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local SoundKit = require(game:GetService("ReplicatedStorage").Shared.SoundKit)
 local StoreTheme = require(script.Parent.StoreTheme)
@@ -112,7 +113,51 @@ function MonsterAI.ExitOvertime()
 	end
 end
 
-local function createRig(def)
+-- Shared by both createRig paths below (placeholder block rig and a real
+-- template model): the name tag and the temporary Patrol/Chase debug tag,
+-- both billboarded above whatever "head" part we're given.
+local function attachHudTags(head, def)
+	local nameTag = Instance.new("BillboardGui")
+	nameTag.Name = "NameTag"
+	nameTag.Size = UDim2.new(6, 0, 1.4, 0)
+	nameTag.StudsOffset = Vector3.new(0, 2.4, 0)
+	nameTag.Adornee = head
+	nameTag.Parent = head
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.FredokaOne
+	label.TextScaled = true
+	label.TextColor3 = def.color
+	label.TextStrokeTransparency = 0
+	label.Text = def.displayName
+	label.Parent = nameTag
+
+	-- Temporary testing aid: shows which of the two states (Patrol/Chase)
+	-- this monster is currently in, right above its name. Remove once
+	-- chase behavior is confirmed solid and this is no longer needed for
+	-- debugging.
+	local stateTag = Instance.new("BillboardGui")
+	stateTag.Name = "StateTag"
+	stateTag.Size = UDim2.new(4, 0, 0.9, 0)
+	stateTag.StudsOffset = Vector3.new(0, 3.5, 0)
+	stateTag.Adornee = head
+	stateTag.Parent = head
+	local stateLabel = Instance.new("TextLabel")
+	stateLabel.Name = "StateLabel"
+	stateLabel.Size = UDim2.fromScale(1, 1)
+	stateLabel.BackgroundTransparency = 1
+	stateLabel.Font = Enum.Font.FredokaOne
+	stateLabel.TextScaled = true
+	stateLabel.TextColor3 = Color3.fromRGB(140, 220, 255)
+	stateLabel.TextStrokeTransparency = 0
+	stateLabel.Text = "PATROL"
+	stateLabel.Parent = stateTag
+
+	return stateLabel
+end
+
+local function createPlaceholderRig(def)
 	local model = Instance.new("Model")
 	model.Name = def.displayName
 
@@ -167,46 +212,98 @@ local function createRig(def)
 	humanoid.BreakJointsOnDeath = false
 	humanoid.Parent = model
 
-	local nameTag = Instance.new("BillboardGui")
-	nameTag.Name = "NameTag"
-	nameTag.Size = UDim2.new(6, 0, 1.4, 0)
-	nameTag.StudsOffset = Vector3.new(0, 2.4, 0)
-	nameTag.Adornee = head
-	nameTag.Parent = head
-	local label = Instance.new("TextLabel")
-	label.Size = UDim2.fromScale(1, 1)
-	label.BackgroundTransparency = 1
-	label.Font = Enum.Font.FredokaOne
-	label.TextScaled = true
-	label.TextColor3 = def.color
-	label.TextStrokeTransparency = 0
-	label.Text = def.displayName
-	label.Parent = nameTag
-
-	-- Temporary testing aid: shows which of the two states (Patrol/Chase)
-	-- this monster is currently in, right above its name. Remove once
-	-- chase behavior is confirmed solid and this is no longer needed for
-	-- debugging.
-	local stateTag = Instance.new("BillboardGui")
-	stateTag.Name = "StateTag"
-	stateTag.Size = UDim2.new(4, 0, 0.9, 0)
-	stateTag.StudsOffset = Vector3.new(0, 3.5, 0)
-	stateTag.Adornee = head
-	stateTag.Parent = head
-	local stateLabel = Instance.new("TextLabel")
-	stateLabel.Name = "StateLabel"
-	stateLabel.Size = UDim2.fromScale(1, 1)
-	stateLabel.BackgroundTransparency = 1
-	stateLabel.Font = Enum.Font.FredokaOne
-	stateLabel.TextScaled = true
-	stateLabel.TextColor3 = Color3.fromRGB(140, 220, 255)
-	stateLabel.TextStrokeTransparency = 0
-	stateLabel.Text = "PATROL"
-	stateLabel.Parent = stateTag
+	local stateLabel = attachHudTags(head, def)
 
 	CollectionService:AddTag(model, "Monster")
 
-	return model, humanoid, root, stateLabel
+	return model, humanoid, root, stateLabel, nil
+end
+
+-- TEST path: clone a real model dropped in ServerStorage.MonsterModels
+-- (see Config.lua's templateModel field and the README) instead of
+-- building the blocky placeholder above. Returns nil (falls back to the
+-- placeholder) if the template doesn't look usable, so a bad/incomplete
+-- drop-in can never hard-crash monster spawning.
+local function createRigFromTemplate(def, template)
+	local model = template:Clone()
+	model.Name = def.displayName
+
+	local root = model:FindFirstChild("HumanoidRootPart")
+	local humanoid = model:FindFirstChildOfClass("Humanoid")
+	if not (root and root:IsA("BasePart") and humanoid) then
+		warn(string.format("[MonsterAI] templateModel %q for %s is missing a HumanoidRootPart/Humanoid -- falling back to the placeholder rig.", def.templateModel, def.id))
+		model:Destroy()
+		return nil
+	end
+	model.PrimaryPart = root
+
+	-- Movement is a direct root.CFrame set every frame (_faceAndMove) --
+	-- same reasoning as the placeholder rig above: anchor the root to take
+	-- the whole welded/jointed body out of physics simulation, since
+	-- nothing here ever needs gravity or collision response.
+	root.Anchored = true
+
+	-- Unlike the placeholder (one big root part IS the whole visible body,
+	-- so only it needs to collide), a real rig's HumanoidRootPart is
+	-- normally a small part buried inside the model, nowhere near its
+	-- full visible extent -- leaving every mesh part CanCollide=false
+	-- would shrink the actual catchable hitbox down to that sliver.
+	-- Collide on every part instead, same as a normal player rig; the
+	-- Monsters-vs-Players collision group already strips out the physical
+	-- push-back (see the placeholder rig's comment above), and Touched
+	-- firing doesn't depend on CanCollide either way, so this only widens
+	-- the hitbox without reintroducing the old shoving problem.
+	for _, part in ipairs(model:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.CollisionGroup = "Monsters"
+			part.CanCollide = true
+		end
+	end
+
+	if def.scale and def.scale ~= 1 then
+		local ok, err = pcall(function()
+			model:ScaleTo(def.scale)
+		end)
+		if not ok then
+			warn(string.format("[MonsterAI] templateModel %q failed to scale: %s", def.templateModel, tostring(err)))
+		end
+	end
+
+	local head = model:FindFirstChild("Head") or root
+	local stateLabel = attachHudTags(head, def)
+
+	CollectionService:AddTag(model, "Monster")
+
+	-- The placeholder rig only ever needed one Touched connection (its
+	-- single big root part WAS the whole visible body). A real model's
+	-- HumanoidRootPart is normally a small internal part, not the visible
+	-- body extent, so relying on it alone here would make catching feel
+	-- unreliable -- hand back every visible part so MonsterAI.new can
+	-- connect Touched on each instead of just the root.
+	local touchParts = {}
+	for _, part in ipairs(model:GetDescendants()) do
+		if part:IsA("BasePart") then
+			table.insert(touchParts, part)
+		end
+	end
+
+	return model, humanoid, root, stateLabel, touchParts
+end
+
+local function createRig(def)
+	if def.templateModel then
+		local modelsFolder = ServerStorage:FindFirstChild("MonsterModels")
+		local template = modelsFolder and modelsFolder:FindFirstChild(def.templateModel)
+		if template then
+			local model, humanoid, root, stateLabel, touchParts = createRigFromTemplate(def, template)
+			if model then
+				return model, humanoid, root, stateLabel, touchParts
+			end
+		else
+			warn(string.format("[MonsterAI] %s has templateModel %q but ServerStorage.MonsterModels.%s doesn't exist -- falling back to the placeholder rig.", def.id, def.templateModel, def.templateModel))
+		end
+	end
+	return createPlaceholderRig(def)
 end
 
 function MonsterAI.new(def, maze)
@@ -226,7 +323,8 @@ function MonsterAI.new(def, maze)
 	self.chasePathIndex = nil
 	self.nextChasePathAttempt = nil
 
-	self.model, self.humanoid, self.root, self.stateLabel = createRig(def)
+	local touchParts
+	self.model, self.humanoid, self.root, self.stateLabel, touchParts = createRig(def)
 	self.model.Parent = workspace
 
 	-- Floors/Ceiling should never occlude a sight check (_canSee) -- monsters
@@ -252,9 +350,17 @@ function MonsterAI.new(def, maze)
 	})
 	self.nextIdleSoundAt = os.clock() + math.random((def.idleSoundInterval or { 8, 16 })[1], (def.idleSoundInterval or { 8, 16 })[2])
 
-	self.touchConn = self.root.Touched:Connect(function(hit)
-		self:_onTouch(hit)
-	end)
+	-- Placeholder rigs return no touchParts (nil) -- one Touched connection
+	-- on the root, which IS the whole visible body, is enough. A real
+	-- template model returns every visible BasePart instead (see
+	-- createRigFromTemplate's comment on why the root alone isn't enough
+	-- there).
+	self.touchConns = {}
+	for _, part in ipairs(touchParts or { self.root }) do
+		table.insert(self.touchConns, part.Touched:Connect(function(hit)
+			self:_onTouch(hit)
+		end))
+	end
 
 	-- Runs independently of the shared movement Heartbeat -- see the long
 	-- comment on _updateLightsOut for why this quirk's bookkeeping must
@@ -983,8 +1089,8 @@ end
 
 function MonsterAI:Destroy()
 	self.destroyed = true
-	if self.touchConn then
-		self.touchConn:Disconnect()
+	for _, conn in ipairs(self.touchConns or {}) do
+		conn:Disconnect()
 	end
 	for i, m in ipairs(registry) do
 		if m == self then

@@ -625,25 +625,51 @@ completion tracking) is entirely data-driven and needs no changes.
 the Tank Engine, Barney, The Grinch, Kung Fu Panda, SpongeBob, and Dora are
 all copyrighted characters owned by other studios. I can't generate or
 legally source their 3D meshes, rigs, animations, or voice clips. What's in
-this repo instead is a small placeholder rig per monster (a colored capsule
-body + a ball head in that character's signature colors + a floating name
-tag) built entirely from primitive `Part`s in `MonsterAI.lua`'s
-`createRig()` function, driven by the color/scale values in
-`Config.Monsters`. It's instantly readable ("that's the blue-and-red one,
-that's Thomas") but it is not the character.
+this repo by default is a small placeholder rig per monster (a colored
+capsule body + a ball head in that character's signature colors + a
+floating name tag) built entirely from primitive `Part`s in
+`MonsterAI.lua`'s `createPlaceholderRig()` function, driven by the
+color/scale values in `Config.Monsters`. It's instantly readable ("that's
+the blue-and-red one, that's Thomas") but it is not the character. If you
+ever intend to publish this place widely, either commission your own
+stylized designs (recolors, different proportions, parody-styled — not the
+character itself) or verify the license on anything you drop in below.
 
-To get real characters in, you have two realistic paths:
-1. **Build/commission your own stylized designs** that are inspired by
-   these characters without being them (recolors, different proportions,
-   parody-styled) — safest for a game you intend to publish widely.
-2. **Source or model your own R15 rigs/meshes** and swap them in — replace
-   the body of `createRig()` in `MonsterAI.lua` with
-   `game:GetObjectFromHash(...)`/`InsertService`/your own uploaded meshes,
-   keeping the `Humanoid` + `HumanoidRootPart` contract so the existing
-   pathfinding/animation code keeps working unmodified.
+**There's now a real pipeline for swapping in an actual model, per
+monster, without touching movement/AI code at all.** Drop a rigged model
+(anything with a `Humanoid` + a `HumanoidRootPart`, doesn't need to be a
+strict 15-part R15 layout — a `Head` is optional too, used for the name
+tag if present, falls back to the root otherwise) into
+`src/ServerStorage/MonsterModels/<Name>.rbxm`, add
+`templateModel = "<Name>"` to that monster's entry in `Config.Monsters`,
+and `MonsterAI.lua`'s `createRig()` clones it instead of building the
+placeholder — see `createRigFromTemplate()`. Missing template folder, a
+missing model, or a model missing `HumanoidRootPart`/`Humanoid` all just
+`warn()` and fall back to the placeholder rig rather than breaking
+anything, so this is safe to try per-monster incrementally.
 
-I did not go looking for Toolbox assets or generate images of these
-characters, since I can't verify licensing on your behalf.
+Mechanically: `default.project.json` now maps `ServerStorage` to
+`src/ServerStorage`, so any `.rbxm`/`.rbxmx` dropped under
+`MonsterModels/` syncs in via Rojo like any other file — this is the one
+place in the repo where an asset is a binary model file instead of a
+`.lua` script, since a real mesh/rig genuinely can't be authored as text.
+`createRigFromTemplate()` anchors the cloned root (same reasoning as the
+placeholder: movement is a direct `CFrame` set every frame, nothing here
+ever needs gravity or physics response), applies `def.scale` via
+`Model:ScaleTo()` instead of resizing a `Part` by hand, and sets
+`CanCollide = true` + `CollisionGroup = "Monsters"` on every `BasePart` in
+the model rather than just the root — a real rig's `HumanoidRootPart` is
+usually a small part buried inside the body, not the visible extent the
+way the placeholder's single big root part is, so leaving the rest
+non-colliding would shrink the catchable hitbox down to that sliver. The
+existing `Monsters`-vs-`Players` collision group (see above) already
+strips out physical push-back regardless, so this doesn't reintroduce the
+old shoving problem. `MonsterAI:_onTouch` connects to every one of those
+parts instead of just the root for the same reason.
+
+One monster currently has a template wired in as a working example:
+Peppa uses `ServerStorage.MonsterModels.Peppa` if present (`Config.lua`'s
+`templateModel = "Peppa"`), falling back to her placeholder otherwise.
 
 **Other things you'll want to do before this feels finished:**
 - **Audio is wired up but empty.** Footsteps (3D, pitch/volume scale with
@@ -689,12 +715,14 @@ src/ServerScriptService/
   Main.server.lua                    Boots everything, wires services together, /godmode /spectate /back /light /blackout chat commands
   MazeGenerator.lua                  Room partitioning + doorway/hallway connectors + color zones + stations + exit
   StoreTheme.lua                     Lighting/atmosphere + dead-fixture flicker loop
-  MonsterAI.lua                      Per-monster state machine + Overtime godmode + placeholder rig + monster audio
+  MonsterAI.lua                      Per-monster state machine + Overtime godmode + placeholder/template rig + monster audio
   MonsterSpawner.lua                 Spawns one of every Config.Monsters entry
   MinigameService.lua                Station wiring, noise pulses, exit-unlock trigger
   ExitService.lua                    Exit door lock/unlock + escape-zone detection
   PlayerService.lua                  Round state per player, catch/respawn/spectate/escape, flashlight toggle+aim, noclip
   GameState.lua                      Waiting → Intermission → Playing → Results loop, Overtime trigger
+src/ServerStorage/
+  MonsterModels/<Name>.rbxm           Real rig to clone for a monster (see "Important limitations" below) -- optional per monster, falls back to the placeholder rig if absent
 src/StarterPlayerScripts/
   Main.client.lua                    Boots all client controllers, each wrapped in pcall so one's error can't skip the rest
   UIUtil.lua                         Shared UI-building helpers

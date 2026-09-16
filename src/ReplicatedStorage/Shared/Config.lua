@@ -203,6 +203,11 @@ Config.Monsters = {
 	{
 		id = "Peppa",
 		displayName = "Peppa Pig",
+		-- TEST: real mesh rig cloned from ServerStorage.MonsterModels.Peppa
+		-- (see MonsterAI.lua's createRig) instead of the blocky placeholder,
+		-- when that model exists. Remove this field to go back to the
+		-- placeholder rig for this monster specifically.
+		templateModel = "Peppa",
 		color = Color3.fromRGB(235, 150, 170),
 		accentColor = Color3.fromRGB(255, 255, 255),
 		scale = 0.9,
