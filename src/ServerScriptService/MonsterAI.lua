@@ -878,15 +878,7 @@ function MonsterAI:_faceAndMove(dt, desiredDir, speed, moveForward)
 	local position = self.root.Position
 	if moveForward then
 		local step = self.facing * speed * dt
-		-- Godmode (Overtime) is the one deliberate exception: it's meant
-		-- to be an inescapable "you should not survive this" endgame
-		-- state (see _updateGodChase's comment -- "completely ignoring
-		-- walls/obstacles" was the explicit original design, and it has
-		-- no pathfinding fallback to route around a block the way normal
-		-- Chase does), so the wall-clip backstop above would just leave a
-		-- godmode monster stuck at a wall between it and the nearest
-		-- player instead. Skip the check for it specifically.
-		if self.god or not self:_stepBlocked(step) then
+		if not self:_stepBlocked(step) then
 			position = position + step
 		end
 	end
@@ -910,10 +902,14 @@ function MonsterAI:_updateFootstepAudio()
 end
 
 -- Overtime: no sight/range checks, just always know exactly where the
--- nearest alive player is and beeline for them at a much higher speed.
--- Same simple, unconditional direct steering as the normal Chase case
--- below -- no obstacle awareness, no exception for Thomas either, per your
--- call to isolate the steering itself for now.
+-- nearest alive player is and head straight for them at a much higher
+-- speed. Wall-restricted like everything else, though -- _faceAndMove's
+-- per-frame wall-clip backstop applies here same as Patrol/Chase, so this
+-- reuses the same clear-line-or-pathfind pattern as the EXPERIMENTAL Chase
+-- branch below (_hasClearLine/_ensureChasePath/_followChasePath, the same
+-- chaseCurrentPath/chasePathIndex/nextChasePathAttempt fields -- safe to
+-- share since Update() returns before ever touching Chase's branch while
+-- self.god is true, so nothing else is using them at the same time).
 function MonsterAI:_updateGodChase(dt)
 	local def = self.def
 	local nearestPlayer, nearestRoot, nearestDist
@@ -932,7 +928,17 @@ function MonsterAI:_updateGodChase(dt)
 	self.target = nearestPlayer.Character
 	self:_updateFootstepAudio()
 	self.currentPath = nil
-	self:_faceAndMove(dt, nearestRoot.Position - self.root.Position, def.chaseSpeed * Config.Round.OvertimeSpeedMultiplier, true)
+	local speed = def.chaseSpeed * Config.Round.OvertimeSpeedMultiplier
+	if self:_hasClearLine(nearestRoot) then
+		self.chaseCurrentPath = nil
+		self:_faceAndMove(dt, nearestRoot.Position - self.root.Position, speed, true)
+	else
+		self:_ensureChasePath(nearestRoot.Position)
+		local reachedEnd = self:_followChasePath(dt, speed)
+		if reachedEnd then
+			self.chaseCurrentPath = nil
+		end
+	end
 end
 
 -- Exactly two states, Patrol and Chase, and they can't interfere with each
@@ -941,13 +947,11 @@ end
 -- no sight of that player, full stop -- nothing else can knock a monster
 -- out of one state and into a muddled third condition.
 --
--- Chase itself is deliberately simple right now, at your request: once
--- chasing, always face+move straight at the player's live position
--- (_faceAndMove), completely ignoring walls/obstacles. No
--- PathfindingService fallback, no exception for Thomas -- this is a
--- reset back to the simplest possible version of chasing, to confirm the
--- underlying steering itself reads as smooth before any obstacle-awareness
--- comes back. CHASE_GIVEUP_TIME and TURN_RATE are declared near the top of
+-- Chase beelines straight at the player's live position (_faceAndMove)
+-- when the line between here and there is clear, falling back to a
+-- pathfound route when it isn't -- see the EXPERIMENTAL Chase
+-- obstacle-awareness section near the top of this file for the full
+-- writeup. CHASE_GIVEUP_TIME and TURN_RATE are declared near the top of
 -- this file (both _updateGodChase above and Update below need them).
 
 function MonsterAI:Update(dt)

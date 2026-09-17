@@ -185,18 +185,17 @@ in Workspace. A totally blank new place works fine.
   (allowed, on purpose), and only a step whose *center* is blocked — an
   actual wall — gets refused.
 
-  **One deliberate exception: Overtime godmode.** `_updateGodChase`
-  beelines straight at whichever player is currently nearest, re-picked
-  fresh every frame — no sight/range checks, and (unlike normal Chase) no
-  pathfinding fallback to route around a block, by original design
-  ("completely ignoring walls/obstacles," see that function's comment) —
-  it's meant to be a genuinely inescapable endgame state once Overtime
-  starts. Since the wall-clip backstop above lives inside the shared
-  `_faceAndMove` primitive, it would otherwise also apply to godmode and
-  just leave it stuck at a wall with nothing to route around. `_faceAndMove`
-  checks `self.god` and skips the backstop specifically for it, so godmode
-  keeps its original walls-don't-matter behavior; normal Chase and Patrol
-  are unaffected.
+  **Overtime godmode** (`_updateGodChase`) is wall-restricted exactly like
+  everything else — no exception in `_faceAndMove` for it. It still has no
+  sight/range checks (always knows exactly where the nearest alive player
+  is, re-picked fresh every frame, at a much higher speed) but now shares
+  the same clear-line-or-pathfind pattern as the EXPERIMENTAL Chase branch
+  above: beelines when `_hasClearLine` to the nearest player is true, falls
+  back to `_ensureChasePath`/`_followChasePath` when it isn't. It reuses
+  those same functions and the same `chaseCurrentPath` fields Chase uses —
+  safe to share since `Update()` returns before ever reaching Chase's own
+  branch while `self.god` is true, so nothing else touches them at the same
+  time.
 
   **Patrol** requests a route to a random point on the grid (or an alert
   location) via `PathfindingService` and walks its waypoints. Its
