@@ -149,6 +149,13 @@ Config.Sounds = {
 	MinigameFail = "", -- one-shot when any station attempt is failed/given up
 	OvertimeWarning = "", -- one-shot dramatic stinger the instant Overtime begins
 	BlackoutSting = "", -- one-shot the instant a store-wide blackout event kills the lights (SpongeBob's own local quirk is silent, no global event)
+	-- Shared fallback jumpscare scream: JumpscareController.lua plays a
+	-- monster's own def.jumpscareSoundId when it has one, otherwise this.
+	-- Every monster's jumpscareSoundId is currently empty, so right now
+	-- this is effectively "the one scream every monster uses" -- fill in
+	-- individual monsters' jumpscareSoundId later (Config.Monsters) to
+	-- override just that one without touching this or any code again.
+	JumpscareScream = "",
 	HeartbeatMaxDistance = 55, -- studs at which the heartbeat starts fading in
 	HeartbeatMinDistance = 10, -- studs at which the heartbeat hits full volume/pitch
 }

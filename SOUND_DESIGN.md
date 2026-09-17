@@ -128,7 +128,14 @@ are where the personality really lives:
   chase. This is the "oh no" stinger.
 - **`jumpscareSoundId`** — fires in your ear (2D, not positional) when it
   actually catches you, ~0.15s after the `Caught` impact sound. This is the
-  scream/gotcha moment.
+  scream/gotcha moment. **Currently empty for every monster on purpose**:
+  `JumpscareController.lua` falls back to `Config.Sounds.JumpscareScream`
+  whenever a monster's own slot is blank, so right now every monster shares
+  one scream (`sfx/sourced/jumpscare_scream.mp3` — a real sourced sound,
+  not a synthesized placeholder — still needs uploading through
+  Studio/the Creator Dashboard and its `rbxassetid://...` pasted into that
+  field). Filling in an individual monster's `jumpscareSoundId` later
+  overrides just that one, no code changes needed.
 - **`idleSoundId`** — fires occasionally while patrolling as an audio tell
   players can learn to recognize and avoid. For Dora specifically, this
   slot is repurposed as her signature "callout" line, fired the instant she

@@ -190,8 +190,13 @@ function JumpscareController.Init(context)
 		-- equivalent pitch-down for them specifically.
 		local pitch = overtimeActive and 0.7 or 1
 		SoundKit.PlayUI(Config.Sounds.Caught, { Volume = 0.8, PlaybackSpeed = pitch })
+		-- Falls back to the shared Config.Sounds.JumpscareScream when this
+		-- monster doesn't have its own jumpscareSoundId set -- currently
+		-- that's every monster, so this is "the one scream everyone uses"
+		-- until individual monsters get their own.
+		local screamId = def.jumpscareSoundId ~= "" and def.jumpscareSoundId or Config.Sounds.JumpscareScream
 		task.delay(0.15, function()
-			SoundKit.PlayUI(def.jumpscareSoundId, { Volume = 1, PlaybackSpeed = pitch })
+			SoundKit.PlayUI(screamId, { Volume = 1, PlaybackSpeed = pitch })
 		end)
 
 		if not (monsterModel and monsterModel.Parent) then
