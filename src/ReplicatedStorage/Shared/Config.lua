@@ -238,6 +238,13 @@ Config.Monsters = {
 		-- when that model exists. Remove this field to go back to the
 		-- placeholder rig for this monster specifically.
 		templateModel = "Thomas",
+		-- His mesh is already sized on its own, unrelated to `scale`
+		-- below (which the placeholder rig used, and which pathfinding
+		-- still uses for his agent radius) -- reported "a little too big"
+		-- at scale (1.3), so this knob controls just his VISUAL size.
+		-- This is a guess (this environment can't preview it live) --
+		-- tune it down further (or up) based on how he actually looks.
+		templateScale = 1,
 		color = Color3.fromRGB(20, 90, 160),
 		accentColor = Color3.fromRGB(200, 30, 30),
 		scale = 1.3,

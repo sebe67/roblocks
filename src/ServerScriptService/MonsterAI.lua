@@ -271,9 +271,17 @@ local function createRigFromTemplate(def, template)
 		end
 	end
 
-	if def.scale and def.scale ~= 1 then
+	-- def.scale also sizes the placeholder rig from scratch (a small block
+	-- times scale) AND feeds PathfindingService's agent radius
+	-- (_pathTo/_pathToChase's computeNavmeshPath call) -- a real mesh is
+	-- already sized on its own, unrelated to whatever def.scale happens to
+	-- be tuned to for the placeholder, so an optional templateScale lets
+	-- the VISUAL size be tuned independently without touching how much
+	-- clearance this monster's pathfinding thinks it needs.
+	local visualScale = def.templateScale or def.scale
+	if visualScale and visualScale ~= 1 then
 		local ok, err = pcall(function()
-			model:ScaleTo(def.scale)
+			model:ScaleTo(visualScale)
 		end)
 		if not ok then
 			warn(string.format("[MonsterAI] templateModel %q failed to scale: %s", def.templateModel, tostring(err)))
@@ -337,6 +345,21 @@ function MonsterAI.new(def, maze)
 	local touchParts
 	self.model, self.humanoid, self.root, self.stateLabel, touchParts = createRig(def)
 	self.model.Parent = workspace
+
+	-- How far the root sits above the model's own lowest point, in
+	-- studs -- used by TeleportTo below to actually ground the model
+	-- instead of assuming every rig's root-to-feet distance is the same.
+	-- The placeholder rig's root IS the whole visible body, so that used
+	-- to be a safe-enough fixed guess (3 studs), but a real template rig's
+	-- HumanoidRootPart can sit anywhere relative to its actual mesh (nose
+	-- height, hip height, center of a train's boiler, whatever the
+	-- original rig happened to use) -- computed once here, right after
+	-- scaling, instead of assumed, so it holds for any rig. Rotation
+	-- around yaw only (see _faceAndMove -- monsters never pitch or roll)
+	-- means this vertical measurement stays valid for the model's whole
+	-- lifetime, no matter which way it's currently facing.
+	local boundingCFrame, boundingSize = self.model:GetBoundingBox()
+	self.groundOffset = self.root.Position.Y - (boundingCFrame.Position.Y - boundingSize.Y / 2)
 
 	-- Floors/Ceiling should never occlude a sight check (_canSee) -- monsters
 	-- and players both stand on the floor and walk under the ceiling, so
@@ -1095,7 +1118,7 @@ function MonsterAI:Update(dt)
 end
 
 function MonsterAI:TeleportTo(position)
-	self.model:PivotTo(CFrame.new(position + Vector3.new(0, 3, 0)))
+	self.model:PivotTo(CFrame.new(position + Vector3.new(0, self.groundOffset, 0)))
 	self.currentPath = nil
 	self.chaseCurrentPath = nil
 	self:_setState("Patrol")

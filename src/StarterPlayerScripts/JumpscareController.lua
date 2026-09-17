@@ -65,18 +65,31 @@ local STATIC_MAX_TRANSPARENCY = 0.95
 
 -- Returns (CFrame, size) for whatever we're framing the camera on --
 -- see the framing-heuristic note at the top of this file.
+--
+-- Position comes from the Head/Face part (whatever's closest to the
+-- actual face), but ORIENTATION comes from the root instead of that
+-- part's own rotation -- a MeshPart's baked rotation is whatever the
+-- mesh author's local axes happened to be when it was modeled, which
+-- doesn't reliably line up with which way the character actually faces
+-- (confirmed the hard way: Thomas's "Face" part's own LookVector pointed
+-- to the side, giving a side-profile shot instead of head-on). The root's
+-- forward direction is the same one _faceAndMove already trusts as
+-- canonical "front" for movement/facing, so anchoring the camera's
+-- direction to that instead is far more reliable across different rigs.
 local function getFocalPoint(model)
 	-- Recursive lookups (FindFirstChild's 2nd argument) since a dropped-in
 	-- template's rig can end up nested a level deeper than expected -- see
 	-- the matching note in MonsterAI.lua's createRigFromTemplate.
-	local part = model:FindFirstChild("Head", true) or model:FindFirstChild("Face", true)
-	if part and part:IsA("BasePart") then
-		return part.CFrame, part.Size.Magnitude
-	end
 	local root = model:FindFirstChild("HumanoidRootPart", true)
-	if root then
-		return root.CFrame, root.Size.Magnitude
+	local part = model:FindFirstChild("Head", true) or model:FindFirstChild("Face", true)
+	local focalPart = (part and part:IsA("BasePart")) and part or root
+
+	if focalPart then
+		local orientationSource = root or focalPart
+		local rotationOnly = orientationSource.CFrame - orientationSource.CFrame.Position
+		return CFrame.new(focalPart.Position) * rotationOnly, focalPart.Size.Magnitude
 	end
+
 	local ok, cframe, size = pcall(function()
 		return model:GetBoundingBox()
 	end)

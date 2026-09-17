@@ -766,6 +766,44 @@ Server tab for a `[MonsterAI] templateModel "..." is missing a
 HumanoidRootPart/Humanoid` warning, which confirms it's a genuine
 structural issue rather than a sync/restart timing one.
 
+**Sizing and grounding a template rig.** Two related problems showed up
+once Thomas's real mesh was in: he was floating/clipping into the floor a
+little, and reported "a little too big." The floor issue was a real bug —
+`MonsterAI:TeleportTo` (used by every spawn/reposition) placed the model a
+hardcoded 3 studs above the target floor point, a safe-enough guess for
+the placeholder rig (whose root part IS the whole visible body) but wrong
+for a real rig, whose `HumanoidRootPart` can sit anywhere relative to its
+actual mesh — hip height, nose height, the center of a train's boiler,
+whatever the original rig happened to use. Fixed by computing
+`self.groundOffset` once per monster, right after its rig is built and
+scaled (`root.Position.Y` minus the model's actual bounding-box bottom via
+`Model:GetBoundingBox()`), and `TeleportTo` uses that instead of the fixed
+3. It only needs computing once because monsters only ever rotate around
+yaw (`_faceAndMove`), which never changes how tall something is.
+
+The sizing issue wasn't a bug, just a bad assumption: `def.scale` sizes
+the *placeholder* rig from scratch (a small block times `scale`) and also
+feeds `PathfindingService`'s agent radius, so a real mesh — already sized
+on its own, unrelated to whatever `scale` happens to be tuned to for the
+placeholder — was getting scaled by that same number on top of its actual
+size. Added an optional `templateScale` field (`createRigFromTemplate`
+prefers it over `scale` for the `Model:ScaleTo()` call specifically) so a
+template's visual size can be tuned independently without touching how
+much clearance its pathfinding thinks it needs. Thomas's is currently `1`
+— a guess, since this environment can't render and check it — expect to
+need to adjust it based on how he actually looks in Studio.
+
+**Jumpscare closeup facing the wrong way.** Thomas's jumpscare showed a
+side profile instead of head-on. The camera was oriented using the
+focal part's (`Head`/`Face`) *own* rotation, but a `MeshPart`'s baked
+rotation is just whatever the mesh author's local axes happened to be
+when it was modeled — it doesn't reliably line up with which way the
+character actually faces. `JumpscareController.lua`'s `getFocalPoint` now
+takes the focal part's *position* but the *root's* orientation instead:
+the root's forward direction is the same one `_faceAndMove` already
+trusts as canonical "front" for movement, so it's far more reliable
+across different rigs than trusting each mesh part's own rotation.
+
 **Other things you'll want to do before this feels finished:**
 - **Audio is wired up but empty.** Footsteps (3D, pitch/volume scale with
   patrol/chase state), a proximity heartbeat, chase stingers, jumpscare
