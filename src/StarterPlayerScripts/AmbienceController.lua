@@ -1,7 +1,9 @@
 -- Global store ambience, a proximity "heartbeat" that ramps up as any
--- monster gets close (whether or not it's chasing you -- pure dread cue),
--- and one-shot stingers for round/exit/escape events. All positions used
--- here are ordinary replicated Part positions -- no new remotes needed.
+-- monster gets close by line of sight (whether or not it's chasing you --
+-- pure dread cue; see hasLineOfSight below for why raw distance alone
+-- isn't enough), and one-shot stingers for round/exit/escape events. All
+-- positions used here are ordinary replicated Part positions -- no new
+-- remotes needed.
 
 local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
@@ -11,6 +13,33 @@ local Net = require(game:GetService("ReplicatedStorage").Shared.Net)
 local SoundKit = require(game:GetService("ReplicatedStorage").Shared.SoundKit)
 
 local AmbienceController = {}
+
+-- Straight-line distance alone would let a monster right on the other
+-- side of a thin wall max out the heartbeat as if it were in the room
+-- with you -- a raycast from the player to the candidate monster, same
+-- exclusions as MonsterAI's own sight checks (Floors/Ceiling never
+-- occlude; a hit that's just part of the monster's own body doesn't
+-- count as blocking), keeps the dread cue tied to what's actually
+-- reachable-by-sight, not just physically nearby through geometry.
+local function hasLineOfSight(character, fromPos, monsterModel, monsterRoot)
+	local excludeList = { character }
+	local store = workspace:FindFirstChild("Store")
+	if store then
+		local floors = store:FindFirstChild("Floors")
+		local ceiling = store:FindFirstChild("Ceiling")
+		if floors then
+			table.insert(excludeList, floors)
+		end
+		if ceiling then
+			table.insert(excludeList, ceiling)
+		end
+	end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = excludeList
+	local result = workspace:Raycast(fromPos, monsterRoot.Position - fromPos, params)
+	return result == nil or result.Instance:IsDescendantOf(monsterModel)
+end
 
 function AmbienceController.Init(context)
 	local player = context.player
@@ -52,7 +81,7 @@ function AmbienceController.Init(context)
 		local nearest = math.huge
 		for _, monsterModel in ipairs(CollectionService:GetTagged("Monster")) do
 			local monsterRoot = monsterModel:FindFirstChild("HumanoidRootPart")
-			if monsterRoot then
+			if monsterRoot and hasLineOfSight(character, root.Position, monsterModel, monsterRoot) then
 				local d = (monsterRoot.Position - root.Position).Magnitude
 				if d < nearest then
 					nearest = d

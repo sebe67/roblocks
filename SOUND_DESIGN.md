@@ -179,8 +179,17 @@ license on the specific file you grab, not just the site's homepage:
 ## What's already wired and needs nothing further
 
 - **Proximity heartbeat**: automatically ramps in as any monster (chasing
-  or not) gets within `Config.Sounds.HeartbeatMaxDistance` studs, maxes out
-  at `HeartbeatMinDistance`. Tune those two numbers to taste.
+  or not) gets within `Config.Sounds.HeartbeatMaxDistance` studs *by line of
+  sight*, maxes out at `HeartbeatMinDistance`. A monster on the other side
+  of a wall doesn't count no matter how close it is in raw distance
+  (`AmbienceController.lua`'s `hasLineOfSight`, a client-side raycast with
+  the same Floors/Ceiling-never-occlude exclusions `MonsterAI.lua` uses for
+  its own sight checks) — tune the two distance numbers to taste. One
+  shared heartbeat for every monster right now (deliberately, not a bug —
+  it's a generic "something's near" dread cue, not "which monster is
+  near"); making it per-monster later would mean the client looking up the
+  nearest monster's `def.id` and checking for a per-monster override before
+  falling back to this shared one, no bigger a change than that.
 - **Footstep character**: volume and pitch already scale up automatically
   when a monster shifts from Patrol → Chase (the only two states that
   exist), so footsteps alone telegraph how much danger you're in.
