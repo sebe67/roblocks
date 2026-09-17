@@ -174,16 +174,29 @@ in Workspace. A totally blank new place works fine.
   geometry; once its origin was past the wall, later frames' rays started
   on the far side and never saw it as blocking again, so it looked like
   the monster just walked through the middle of a wall. `_faceAndMove`
-  now casts a second, much shorter ray every frame — just *this frame's*
-  step (a few studs), not the tens of studs to the player — and refuses
-  to advance into whatever it hits. A short ray through solid wall gets
-  hit reliably where a long one grazing a corner might not, so this
-  catches the case the long check misses, and it applies to Patrol too,
-  not just the EXPERIMENTAL Chase pathfinding. It's deliberately a single
-  ray through the monster's own center: a doorway narrower than the
-  model can still be walked through with some visible side-clipping
-  (allowed, on purpose), and only a step whose *center* is blocked — an
-  actual wall — gets refused.
+  now takes an `enforceWallClip` flag and, when it's set, casts a second,
+  much shorter ray every frame — just *this frame's* step (a few studs),
+  not the tens of studs to the player — refusing to advance into whatever
+  it hits. A short ray through solid wall gets hit reliably where a long
+  one grazing a corner might not. It's deliberately a single ray through
+  the monster's own center: a doorway narrower than the model can still be
+  walked through with some visible side-clipping (allowed, on purpose),
+  and only a step whose *center* is blocked — an actual wall — gets
+  refused.
+
+  **Only applied to beeline movement, not path-following.** The flag above
+  is passed `true` only where normal Chase and godmode beeline straight at
+  a live target's current position with no vetted route behind it — the
+  only place the original clip-through-a-wall bug actually happened. It's
+  deliberately left off for path-following (Patrol's own route, or either
+  state's pathfound fallback): those already walk a route
+  `PathfindingService` computed to avoid solid geometry, and applying the
+  same check there caused a real regression instead of fixing one — a
+  Patrol waypoint sending a monster through one of this game's
+  deliberately-narrow doorways at a slight angle could clip the door frame
+  on this single-center-ray check and simply refuse to advance, with
+  nothing to make it back off and try a different angle, reading as a
+  monster that just stopped moving entirely.
 
   **Overtime godmode** (`_updateGodChase`) is wall-restricted exactly like
   everything else — no exception in `_faceAndMove` for it. It still has no
@@ -737,6 +750,21 @@ boiler, named `Face` instead) — worth knowing since a few other systems
 (the jumpscare closeup below) look for `Head` first and fall back from
 there; his `NameTag`/`StateTag` billboards end up anchored to `Face`
 instead, same as every other per-monster HUD element.
+
+`createRigFromTemplate`'s `HumanoidRootPart`/`Humanoid`/`Head`/`Face`
+lookups all search recursively (`FindFirstChild`'s second argument, or a
+manual `GetDescendants()` scan for `Humanoid` specifically, since
+`FindFirstChildOfClass` doesn't have a recursive option), not just a
+template's direct children — how a given `.rbxm` export nests its rig
+internally isn't something this repo controls per drop-in file, so this
+avoids a template silently falling back to the placeholder just because
+its rig sits one level deeper than expected. If a monster's real model
+still isn't showing up in Studio after a fresh Rojo sync (and a full Play
+restart — files already synced into a session that was already running
+won't retroactively appear until it restarts), check the Output window's
+Server tab for a `[MonsterAI] templateModel "..." is missing a
+HumanoidRootPart/Humanoid` warning, which confirms it's a genuine
+structural issue rather than a sync/restart timing one.
 
 **Other things you'll want to do before this feels finished:**
 - **Audio is wired up but empty.** Footsteps (3D, pitch/volume scale with

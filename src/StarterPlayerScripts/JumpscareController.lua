@@ -66,11 +66,14 @@ local STATIC_MAX_TRANSPARENCY = 0.95
 -- Returns (CFrame, size) for whatever we're framing the camera on --
 -- see the framing-heuristic note at the top of this file.
 local function getFocalPoint(model)
-	local part = model:FindFirstChild("Head") or model:FindFirstChild("Face")
+	-- Recursive lookups (FindFirstChild's 2nd argument) since a dropped-in
+	-- template's rig can end up nested a level deeper than expected -- see
+	-- the matching note in MonsterAI.lua's createRigFromTemplate.
+	local part = model:FindFirstChild("Head", true) or model:FindFirstChild("Face", true)
 	if part and part:IsA("BasePart") then
 		return part.CFrame, part.Size.Magnitude
 	end
-	local root = model:FindFirstChild("HumanoidRootPart")
+	local root = model:FindFirstChild("HumanoidRootPart", true)
 	if root then
 		return root.CFrame, root.Size.Magnitude
 	end

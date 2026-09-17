@@ -228,8 +228,19 @@ local function createRigFromTemplate(def, template)
 	local model = template:Clone()
 	model.Name = def.displayName
 
-	local root = model:FindFirstChild("HumanoidRootPart")
-	local humanoid = model:FindFirstChildOfClass("Humanoid")
+	-- FindFirstChild's second (recursive) argument covers a rig that's
+	-- nested a level deeper than expected (a wrapper Model, an inner
+	-- rig group, etc.) -- exactly how it was saved isn't something we
+	-- control per drop-in file, so look anywhere in the model rather
+	-- than assuming a flat, direct-children layout.
+	local root = model:FindFirstChild("HumanoidRootPart", true)
+	local humanoid
+	for _, descendant in ipairs(model:GetDescendants()) do
+		if descendant:IsA("Humanoid") then
+			humanoid = descendant
+			break
+		end
+	end
 	if not (root and root:IsA("BasePart") and humanoid) then
 		warn(string.format("[MonsterAI] templateModel %q for %s is missing a HumanoidRootPart/Humanoid -- falling back to the placeholder rig.", def.templateModel, def.id))
 		model:Destroy()
@@ -269,7 +280,7 @@ local function createRigFromTemplate(def, template)
 		end
 	end
 
-	local head = model:FindFirstChild("Head") or root
+	local head = model:FindFirstChild("Head", true) or model:FindFirstChild("Face", true) or root
 	local stateLabel = attachHudTags(head, def)
 
 	CollectionService:AddTag(model, "Monster")
@@ -864,6 +875,20 @@ end
 -- some visible side-clipping, which is fine -- only a step whose CENTER
 -- is blocked (i.e. an actual wall, not just a tight-but-passable gap)
 -- gets refused.
+--
+-- ONLY applied to beeline movement (_faceAndMove's enforceWallClip
+-- parameter, see below) -- the two places a monster walks a straight
+-- line to a live target's current position with no vetted route behind
+-- it (normal Chase and godmode both beeline when _hasClearLine is true).
+-- It's deliberately NOT applied to path-following (Patrol's own route,
+-- or either state's pathfound fallback): those already walk a route
+-- PathfindingService computed to avoid solid geometry, and turned out to
+-- be exactly the case where this backstop caused a NEW problem instead
+-- of fixing one -- a Patrol waypoint sending a monster through one of
+-- this game's deliberately-narrow doorways at a slight angle could clip
+-- the door frame on this single-center-ray check and simply refuse to
+-- advance, with nothing to make it back off and re-approach differently,
+-- reading as a monster that just stopped moving entirely.
 function MonsterAI:_stepBlocked(step)
 	if step.Magnitude < 0.001 then
 		return false
@@ -874,14 +899,14 @@ function MonsterAI:_stepBlocked(step)
 	return workspace:Raycast(self.root.Position, step, params) ~= nil
 end
 
-function MonsterAI:_faceAndMove(dt, desiredDir, speed, moveForward)
+function MonsterAI:_faceAndMove(dt, desiredDir, speed, moveForward, enforceWallClip)
 	local currentFacing = self.facing or Vector3.new(self.root.CFrame.LookVector.X, 0, self.root.CFrame.LookVector.Z)
 	self.facing = rotateTowards(currentFacing, desiredDir, TURN_RATE * dt)
 
 	local position = self.root.Position
 	if moveForward then
 		local step = self.facing * speed * dt
-		if not self:_stepBlocked(step) then
+		if not (enforceWallClip and self:_stepBlocked(step)) then
 			position = position + step
 		end
 	end
@@ -934,7 +959,7 @@ function MonsterAI:_updateGodChase(dt)
 	local speed = def.chaseSpeed * Config.Round.OvertimeSpeedMultiplier
 	if self:_hasClearLine(nearestRoot) then
 		self.chaseCurrentPath = nil
-		self:_faceAndMove(dt, nearestRoot.Position - self.root.Position, speed, true)
+		self:_faceAndMove(dt, nearestRoot.Position - self.root.Position, speed, true, true)
 	else
 		self:_ensureChasePath(nearestRoot.Position)
 		local reachedEnd = self:_followChasePath(dt, speed)
@@ -1017,7 +1042,7 @@ function MonsterAI:Update(dt)
 				-- the top of this file for how to remove this cleanly.
 				if self:_hasClearLine(root) then
 					self.chaseCurrentPath = nil
-					self:_faceAndMove(dt, root.Position - self.root.Position, speed, true)
+					self:_faceAndMove(dt, root.Position - self.root.Position, speed, true, true)
 				else
 					self:_ensureChasePath(root.Position)
 					local reachedEnd = self:_followChasePath(dt, speed)
