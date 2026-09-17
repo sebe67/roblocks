@@ -144,7 +144,17 @@ are where the personality really lives:
   players can learn to recognize and avoid. For Dora specifically, this
   slot is repurposed as her signature "callout" line, fired the instant she
   spots a player (see `MonsterAI.lua`'s `callout` quirk handling) instead of
-  randomly.
+  randomly. **Currently empty for every monster on purpose**, same pattern
+  as `jumpscareSoundId`/`JumpscareScream`: falls back to
+  `Config.Sounds.EvilLaugh` (`MonsterAI.lua`'s `_resolveIdleSoundId`) —
+  right now that's one shared evil-laugh clip every monster uses both for
+  this random Patrol tell *and* as a second, new trigger: a one-shot the
+  instant a chasing monster gets within `CHASE_LAUGH_PROXIMITY` (15 studs)
+  of its target, on an 8-second cooldown (`CHASE_LAUGH_COOLDOWN`) so it
+  can't fire every frame while lingering that close — same sound, same
+  fallback, two separate trigger points, per request. Filling in an
+  individual monster's own `idleSoundId` later overrides both triggers for
+  just that monster at once.
 
 | Monster | `chaseSoundId` brief | `jumpscareSoundId` brief | `idleSoundId` brief |
 |---|---|---|---|

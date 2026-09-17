@@ -36,6 +36,13 @@ local TURN_RATE = math.rad(300)
 local CHASE_GROWL_MAX_VOLUME = 0.7
 local CHASE_GROWL_FADE_TIME = 1.5
 
+-- _updateChaseProximityLaugh: how close (studs) the target needs to be
+-- during Chase to trigger the evil-laugh one-shot, and the minimum gap
+-- between two triggers so it can't fire every single frame while it
+-- lingers inside that range.
+local CHASE_LAUGH_PROXIMITY = 15
+local CHASE_LAUGH_COOLDOWN = 8
+
 -- EXPERIMENTAL -- Chase obstacle-awareness. Everything tagged with this
 -- same "EXPERIMENTAL" word (these two constants, _hasClearLine,
 -- _ensureChasePath, _followChasePath, _pathToChase, the chaseCurrentPath/
@@ -993,6 +1000,38 @@ function MonsterAI:_updateChaseGrowlAudio(dt)
 	end
 end
 
+-- def.idleSoundId falls back to the shared Config.Sounds.EvilLaugh
+-- whenever a monster doesn't have its own (currently every monster) --
+-- same pattern as JumpscareScream/ChaseGrowl. Used both by the existing
+-- random Patrol tell and the proximity laugh below.
+function MonsterAI:_resolveIdleSoundId()
+	local def = self.def
+	return def.idleSoundId ~= "" and def.idleSoundId or Config.Sounds.EvilLaugh
+end
+
+-- One-shot: while actually Chasing (not just Patrolling with a noise
+-- alert), if the target is within CHASE_LAUGH_PROXIMITY, play the same
+-- evil-laugh sound the random Patrol tell uses. CHASE_LAUGH_COOLDOWN
+-- stops it firing every single frame while the target lingers inside
+-- that range -- it can fire again as soon as the cooldown clears, not
+-- just once per chase, so closing back in after backing off re-triggers
+-- it.
+function MonsterAI:_updateChaseProximityLaugh(targetRoot)
+	local laughId = self:_resolveIdleSoundId()
+	if laughId == "" then
+		return
+	end
+	local now = os.clock()
+	if self.nextChaseLaughAt and now < self.nextChaseLaughAt then
+		return
+	end
+	local dist = (targetRoot.Position - self.root.Position).Magnitude
+	if dist <= CHASE_LAUGH_PROXIMITY then
+		SoundKit.PlayAt(self.root, laughId, { Volume = 0.8, MaxDistance = 60, SoundGroup = getMonsterSoundGroup() })
+		self.nextChaseLaughAt = now + CHASE_LAUGH_COOLDOWN
+	end
+end
+
 -- Overtime: no sight/range checks, just always know exactly where the
 -- nearest alive player is and head straight for them at a much higher
 -- speed. Wall-restricted like everything else, though -- _faceAndMove's
@@ -1020,6 +1059,7 @@ function MonsterAI:_updateGodChase(dt)
 	self.target = nearestPlayer.Character
 	self:_updateFootstepAudio()
 	self:_updateChaseGrowlAudio(dt)
+	self:_updateChaseProximityLaugh(nearestRoot)
 	self.currentPath = nil
 	local speed = def.chaseSpeed * Config.Round.OvertimeSpeedMultiplier
 	if self:_hasClearLine(nearestRoot) then
@@ -1073,7 +1113,7 @@ function MonsterAI:Update(dt)
 				MonsterAI.BroadcastCallout(seen.root.Position, self)
 				-- Dora's idleSoundId is reserved for this exact moment -- her
 				-- "callout" line, not a random patrol tell.
-				SoundKit.PlayAt(self.root, def.idleSoundId, { Volume = 0.8, MaxDistance = 70, SoundGroup = getMonsterSoundGroup() })
+				SoundKit.PlayAt(self.root, self:_resolveIdleSoundId(), { Volume = 0.8, MaxDistance = 70, SoundGroup = getMonsterSoundGroup() })
 			end
 		end
 	end
@@ -1085,6 +1125,7 @@ function MonsterAI:Update(dt)
 		local root = self.target and self.target:FindFirstChild("HumanoidRootPart")
 		local hum = self.target and self.target:FindFirstChildOfClass("Humanoid")
 		if root and hum and hum.Health > 0 then
+			self:_updateChaseProximityLaugh(root)
 			if self:_canSee(root) then
 				self.lastSightTime = now
 			end
@@ -1154,7 +1195,7 @@ function MonsterAI:Update(dt)
 	-- Occasional audio tell (SpongeBob's giggle, George's chatter, etc).
 	-- Dora's idleSoundId is reserved for her callout line, not this roll.
 	if def.quirk ~= "callout" and now > self.nextIdleSoundAt then
-		SoundKit.PlayAt(self.root, def.idleSoundId, { Volume = 0.6, MaxDistance = 40, SoundGroup = getMonsterSoundGroup() })
+		SoundKit.PlayAt(self.root, self:_resolveIdleSoundId(), { Volume = 0.6, MaxDistance = 40, SoundGroup = getMonsterSoundGroup() })
 		local interval = def.idleSoundInterval or { 8, 16 }
 		self.nextIdleSoundAt = now + math.random(interval[1], interval[2])
 	end

@@ -161,7 +161,13 @@ Config.Sounds = {
 	-- snapping on/off -- distinct from chaseSoundId (a one-shot stinger
 	-- fired only once, the instant Chase begins). One shared loop for
 	-- every monster for now, same reasoning as JumpscareScream above.
-	ChaseGrowl = "",
+	ChaseGrowl = "rbxassetid://132928047750194",
+	-- Shared fallback for def.idleSoundId, same pattern as JumpscareScream
+	-- -- an evil laugh, played both as the existing random Patrol tell
+	-- (MonsterAI.lua's idle-roll) AND as a new one-shot when a monster
+	-- gets within CHASE_LAUGH_PROXIMITY of its target during Chase (see
+	-- _updateChaseProximityLaugh). Same sound, two triggers, per request.
+	EvilLaugh = "rbxassetid://100209034619283",
 	HeartbeatMaxDistance = 55, -- studs at which the heartbeat starts fading in
 	HeartbeatMinDistance = 10, -- studs at which the heartbeat hits full volume/pitch
 }
