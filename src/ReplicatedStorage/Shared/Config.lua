@@ -155,7 +155,7 @@ Config.Sounds = {
 	-- this is effectively "the one scream every monster uses" -- fill in
 	-- individual monsters' jumpscareSoundId later (Config.Monsters) to
 	-- override just that one without touching this or any code again.
-	JumpscareScream = "",
+	JumpscareScream = "rbxassetid://137188242007840",
 	HeartbeatMaxDistance = 55, -- studs at which the heartbeat starts fading in
 	HeartbeatMinDistance = 10, -- studs at which the heartbeat hits full volume/pitch
 }
