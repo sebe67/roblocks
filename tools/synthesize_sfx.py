@@ -235,6 +235,37 @@ def sfx_minigame_fail():
     return normalize(sig, 0.8)
 
 
+def sfx_overtime_warning():
+    # Sharp low impact first -- "everything just got worse" -- then an
+    # alternating two-tone klaxon wail (a slow square-wave LFO switching
+    # between two frequencies, like an air-raid siren) for the rest.
+    hit_dur = 0.25
+    hit = (sine(55, hit_dur) + 0.6 * sine(58, hit_dur)) * env_ad(hit_dur, 0.002, 6)
+    noise_hit = one_pole_lowpass(white_noise(hit_dur, seed=50), 0.3) * env_ad(hit_dur, 0.001, 8) * 0.6
+    hit_sig = mix(hit, noise_hit)
+
+    siren_dur = 1.75
+    t = t_axis(siren_dur)
+    lfo = np.sign(np.sin(2 * np.pi * 2.2 * t))
+    freq = np.where(lfo > 0, 420.0, 340.0)
+    phase = 2 * np.pi * np.cumsum(freq) / SR
+    siren = np.sin(phase) * env_ad(siren_dur, 0.05, 1.2) * 0.8
+
+    sig = np.concatenate([hit_sig, siren])
+    return normalize(sig, 0.95)
+
+
+def sfx_blackout_sting():
+    # Quick descending pitch sweep + a burst of crackly high-passed noise --
+    # power cutting out, not a musical stinger, so it reads as sudden and
+    # electrical rather than a chime.
+    dur = 0.4
+    sweep = sine_sweep(900, 80, dur, curve="exp") * env_ad(dur, 0.002, 4)
+    crackle = one_pole_highpass(white_noise(dur, seed=51), 0.4) * env_ad(dur, 0.001, 5) * 0.5
+    sig = mix(sweep, crackle)
+    return normalize(sig, 0.9)
+
+
 GLOBAL_SFX = {
     "store_ambience": sfx_store_ambience,
     "heartbeat": sfx_heartbeat,
@@ -246,6 +277,8 @@ GLOBAL_SFX = {
     "ui_click": sfx_ui_click,
     "minigame_success": sfx_minigame_success,
     "minigame_fail": sfx_minigame_fail,
+    "overtime_warning": sfx_overtime_warning,
+    "blackout_sting": sfx_blackout_sting,
 }
 
 # ---------------------------------------------------------------- Monsters
@@ -260,6 +293,7 @@ MONSTERS = {
     "po": 0.90,
     "spongebob": 1.10,
     "dora": 1.00,
+    "tungsahur": 0.50,
 }
 
 

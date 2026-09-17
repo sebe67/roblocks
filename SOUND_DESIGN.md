@@ -15,8 +15,10 @@ needs your account either way, since Roblox only accepts audio through
 Studio/the Creator Dashboard, moderated. What I *can* do is synthesize
 original audio with plain DSP (sine/noise/envelope math via numpy, no
 samples, nothing lifted from anywhere), so that's what's in `sfx/placeholder/`
-in this repo: **34 finished, non-infringing WAV files, one for every single
-`Config.Sounds` / per-monster slot.**
+in this repo: **39 finished, non-infringing WAV files, one for every single
+`Config.Sounds` / per-monster slot** — including Tung Tung Tung Sahur and
+`OvertimeWarning`/`BlackoutSting`, both added to the roster/Config after the
+original 34 were generated, backfilled the same way.
 
 They're synthesized, not recorded — so `chase_barney.wav` is a low
 distorted-roar-style stinger and `idle_george.wav` is a rapid high tremolo
@@ -44,9 +46,11 @@ Global (`sfx/placeholder/*.wav` → `Config.Sounds.*`):
 | `ui_click.wav` | `UIClick` |
 | `minigame_success.wav` | `MinigameSuccess` |
 | `minigame_fail.wav` | `MinigameFail` |
+| `overtime_warning.wav` | `OvertimeWarning` |
+| `blackout_sting.wav` | `BlackoutSting` |
 
 Per-monster (`chase_<id>.wav` / `jumpscare_<id>.wav` / `idle_<id>.wav`, `<id>`
-lowercased, e.g. `chase_thomas.wav`) → that monster's `chaseSoundId` /
+lowercased, e.g. `chase_thomas.wav`, `chase_tungsahur.wav`) → that monster's `chaseSoundId` /
 `jumpscareSoundId` / `idleSoundId` in `Config.Monsters`.
 
 ### Getting them into the game
@@ -105,6 +109,7 @@ media.
 | `MinigameSuccess` | One-shot, any station cleared | Short positive chime, distinct from `ExitUnlocked` (that one should feel bigger). | "success chime short", "correct answer ding" |
 | `MinigameFail` | One-shot, any station failed/given up | Short negative buzz/thud — not too harsh, players will hear it a lot while learning the minigames. | "fail buzz short", "wrong answer buzz" |
 | `OvertimeWarning` | One-shot, the instant Overtime begins (10 min mark) | Big and alarming — a klaxon, a discordant orchestral hit, something that says "everything just got worse." This is the one sound in the whole game that's allowed to be jarring. | "alarm klaxon", "horror sting dramatic", "dissonant orchestral hit" |
+| `BlackoutSting` | One-shot, the instant a store-wide blackout kills the lights | Quick and electrical, not musical — power cutting out, not a chime. SpongeBob's own local `lightsOut` quirk is silent and doesn't use this; it's only the global random blackout event. | "power outage sound", "electrical zap short", "lights out sting" |
 
 Overtime also automatically pitches down and distorts every *monster* sound
 (footsteps, chase stingers, jumpscares, idle tells) via a shared SoundGroup
@@ -140,6 +145,7 @@ are where the personality really lives:
 | Kung Fu Panda | Whoosh + heavy impact thud | Loud battle shout | Grunt or a soft belly laugh |
 | SpongeBob | Excited, high-pitched laugh | Maniacal laugh, pitched/distorted | Giggle — **this is his whole "giggler" quirk's audio tell**, make it recognizable and a little unsettling |
 | Dora | Declarative "spotted you" alert sting | Loud, sudden shout | Her "callout" line — something declarative/announcing, since narratively she's telling every other monster where you are |
+| Tung Tung Tung Sahur | Heavy, resonant wooden thud/knock building into a chant-like rhythm | Deep, distorted roar with a wooden-percussion edge | Rhythmic knocking (like wood-on-wood), slow and deliberate |
 
 Toolbox search ideas that work across the board: "monster growl", "creature
 screech", "cartoon scream distorted", "horror stinger", "creepy giggle",
@@ -167,8 +173,8 @@ license on the specific file you grab, not just the site's homepage:
   or not) gets within `Config.Sounds.HeartbeatMaxDistance` studs, maxes out
   at `HeartbeatMinDistance`. Tune those two numbers to taste.
 - **Footstep character**: volume and pitch already scale up automatically
-  when a monster shifts from Patrol → Investigate/Search → Chase, so
-  footsteps alone telegraph how much danger you're in.
+  when a monster shifts from Patrol → Chase (the only two states that
+  exist), so footsteps alone telegraph how much danger you're in.
 - **Minigame click feedback**: every interactive button in all three
   minigames already plays `Config.Sounds.UIClick` — filling in that one
   field covers all of them at once.
