@@ -138,7 +138,7 @@ Config.Flashlight = {
 -- to "" (silent) -- see SOUND_DESIGN.md for a brief on each one.
 Config.Sounds = {
 	StoreAmbience = "", -- looping low dread drone/hum, plays for everyone throughout
-	Heartbeat = "", -- looping heartbeat; volume/pitch ramp with nearest monster distance
+	Heartbeat = "rbxassetid://102163318825015", -- looping heartbeat; volume/pitch ramp with nearest monster distance
 	RoundStart = "", -- one-shot horn/bell when Playing begins
 	IntermissionStart = "", -- one-shot when the "next round starts in..." countdown begins
 	ExitUnlocked = "", -- triumphant one-shot when all stations are cleared
