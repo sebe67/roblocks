@@ -482,6 +482,13 @@ function MonsterAI:_onTouch(hit)
 	if player:GetAttribute("State") ~= "Alive" then
 		return
 	end
+	if player:GetAttribute("Hidden") then
+		-- Belt-and-braces: Update()'s Chase branch already drops a target
+		-- the instant it goes Hidden, but Touched can fire from stale
+		-- contact in the same frame HidingService moves them -- a Hidden
+		-- player must never be catchable no matter how this fires.
+		return
+	end
 	if os.clock() < (self.catchCooldown[player] or 0) then
 		return
 	end
@@ -1134,7 +1141,9 @@ function MonsterAI:Update(dt)
 	if self.state == "Chase" then
 		local root = self.target and self.target:FindFirstChild("HumanoidRootPart")
 		local hum = self.target and self.target:FindFirstChildOfClass("Humanoid")
-		if root and hum and hum.Health > 0 then
+		local targetPlayer = self.target and Players:GetPlayerFromCharacter(self.target)
+		local targetHidden = targetPlayer and targetPlayer:GetAttribute("Hidden")
+		if root and hum and hum.Health > 0 and not targetHidden then
 			self:_updateChaseProximityLaugh(root)
 			if self:_canSee(root) then
 				self.lastSightTime = now
@@ -1169,6 +1178,12 @@ function MonsterAI:Update(dt)
 				end
 			end
 		else
+			-- Target is gone/dead OR just went Hidden (a wardrobe) -- give
+			-- up immediately in both cases, no CHASE_GIVEUP_TIME grace.
+			-- Hidden in particular must drop the beeline target THIS frame:
+			-- otherwise the monster keeps walking straight at their now
+			-- Hidden root position (inside the wardrobe) for up to
+			-- CHASE_GIVEUP_TIME seconds and can walk right into it.
 			self:_setState("Patrol")
 			self.target = nil
 			self.currentPath = nil

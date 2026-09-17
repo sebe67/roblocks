@@ -111,7 +111,7 @@ Config.Player = {
 	-- -- the server-side WalkSpeed=0 freeze while Hidden (and =0 on catch)
 	-- is what actually keeps this un-cheatable, not the stamina math.
 	SprintDuration = 10,
-	SprintRegenDuration = 20,
+	SprintRegenDuration = 12, -- was 20; recharges noticeably faster per request
 	SprintRegenHiddenMultiplier = 2,
 	MinSprintFraction = 0.15, -- stops instant flicker at the empty edge
 }

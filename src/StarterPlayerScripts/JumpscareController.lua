@@ -39,6 +39,7 @@
 -- art replaces this.
 
 local RunService = game:GetService("RunService")
+local ContentProvider = game:GetService("ContentProvider")
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local Net = require(game:GetService("ReplicatedStorage").Shared.Net)
 local SoundKit = require(game:GetService("ReplicatedStorage").Shared.SoundKit)
@@ -99,7 +100,40 @@ local function getFocalPoint(model)
 	return CFrame.new(), 4
 end
 
+-- A Sound's first Play() has to actually fetch/decode the asset, which
+-- takes a variable, sometimes-not-trivial amount of time the very first
+-- time -- while the screen going black/the viewport rendering is instant
+-- (no asset fetch involved), so the scream could lag behind the death
+-- screen by an inconsistent amount depending on whether this was the
+-- first time that asset had ever been played on this client. Preloading
+-- every jumpscare-related sound once at startup means it's already
+-- cached in memory long before any real catch happens, so Play() actually
+-- starts audio near-instantly every time instead of just the 2nd+ time.
+local function preloadJumpscareSounds()
+	local ids = { Config.Sounds.Caught, Config.Sounds.JumpscareScream }
+	for _, def in ipairs(Config.Monsters) do
+		if def.jumpscareSoundId ~= "" then
+			table.insert(ids, def.jumpscareSoundId)
+		end
+	end
+	local filtered = {}
+	for _, id in ipairs(ids) do
+		if id and id ~= "" then
+			table.insert(filtered, id)
+		end
+	end
+	if #filtered > 0 then
+		pcall(function()
+			ContentProvider:PreloadAsync(filtered)
+		end)
+	end
+end
+
 function JumpscareController.Init(context)
+	-- Non-blocking: PreloadAsync can take a moment, and this must not delay
+	-- every other controller after this one in Main.client.lua's init loop.
+	task.spawn(preloadJumpscareSounds)
+
 	local gui = UIUtil.screenGui("JumpscareGui")
 	gui.Enabled = false
 	gui.DisplayOrder = 50

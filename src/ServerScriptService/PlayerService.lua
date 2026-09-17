@@ -15,6 +15,7 @@ function PlayerService.new(maze)
 	self.maze = maze
 	self.roundActive = false
 	self.onStateChanged = nil -- set by GameState
+	self.hidingService = nil -- set by Main.server.lua
 	self._hiddenStash = {}
 	self._noclipStash = {}
 	self._flightConns = {}
@@ -73,6 +74,21 @@ function PlayerService.new(maze)
 	end
 
 	return self
+end
+
+-- Forces a player out of any wardrobe they're currently occupying and
+-- clears the Hidden attribute -- called on every transition away from
+-- "actively playing and able to stay hidden" (caught, died, timed out,
+-- escaped, respawned) so a player who never got the chance to press E to
+-- leave on their own doesn't permanently occupy that spot (or, worse,
+-- permanently lock themselves out of every spot -- see HidingService's
+-- own comment on _enter's early-return check).
+function PlayerService:_exitHiding(player)
+	if self.hidingService then
+		self.hidingService:ForceExit(player)
+	else
+		player:SetAttribute("Hidden", false)
+	end
 end
 
 function PlayerService:_onCharacterAdded(player, character)
@@ -424,10 +440,11 @@ function PlayerService:SpawnForRound(player)
 		root.CFrame = CFrame.new(self.maze.entranceWorldPos + offset)
 	end
 
+	self:_exitHiding(player) -- safety net in case a wardrobe hide was still active (e.g. died mid-hide)
+
 	player:SetAttribute("State", "Alive")
 	player:SetAttribute("Invulnerable", false)
 	player:SetAttribute("Untouchable", false) -- safety net in case /spectate2 was left on without /back
-	player:SetAttribute("Hidden", false) -- safety net in case a wardrobe hide was still active
 	self.spawnEvent:FireClient(player)
 end
 
@@ -444,6 +461,7 @@ function PlayerService:CatchPlayer(player, monsterId, monsterModel)
 		return
 	end
 	player:SetAttribute("State", "Caught")
+	self:_exitHiding(player)
 
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -479,6 +497,7 @@ function PlayerService:MarkDead(player, monsterId)
 		return
 	end
 	player:SetAttribute("State", "Dead")
+	self:_exitHiding(player)
 	self:_hideCharacter(player)
 	self.deathMenuEvent:FireClient(player, monsterId)
 	if self.onStateChanged then
@@ -491,6 +510,7 @@ function PlayerService:ForceTimeout(player)
 		return
 	end
 	player:SetAttribute("State", "TimedOut")
+	self:_exitHiding(player)
 	self:_hideCharacter(player)
 	self.deathMenuEvent:FireClient(player, "TimedOut")
 	if self.onStateChanged then
@@ -529,6 +549,7 @@ function PlayerService:MarkEscaped(player)
 		return
 	end
 	player:SetAttribute("State", "Escaped")
+	self:_exitHiding(player)
 	self:_hideCharacter(player)
 	self.escapedEvent:FireClient(player)
 	if self.onStateChanged then

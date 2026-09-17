@@ -56,6 +56,7 @@ local exitService = ExitService.new(maze)
 local minigameService = MinigameService.new(maze, exitService)
 local playerService = PlayerService.new(maze)
 local hidingService = HidingService.new()
+playerService.hidingService = hidingService
 
 MonsterAI.SetCatchHandler(function(player, monsterId, monsterModel)
 	playerService:CatchPlayer(player, monsterId, monsterModel)

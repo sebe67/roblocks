@@ -1,7 +1,12 @@
 -- Wires up every "HidingSpot" wardrobe MazeGenerator placed: a single
 -- ProximityPrompt per spot (default key E) that toggles the triggering
 -- player in and out -- same key both ways, per request. Mirrors
--- MinigameService's ProximityPrompt setup.
+-- MinigameService's ProximityPrompt setup. The prompt's ActionText flips
+-- between "Enter Closet" and "Exit Closet" with that spot's own occupancy
+-- -- accurate for whoever's actually using it; a second player who walks
+-- up to an already-occupied spot would see "Exit Closet" too (a single
+-- shared prompt can't hold per-viewer text), but triggering it while
+-- occupied by someone else is still a no-op either way.
 --
 -- Being Hidden does two things, both authoritative server-side so a
 -- modified client can't fake either one:
@@ -26,7 +31,7 @@ function HidingService.new()
 	self:_setupSpots()
 
 	Players.PlayerRemoving:Connect(function(player)
-		self:_forceExit(player)
+		self:ForceExit(player)
 	end)
 
 	return self
@@ -38,7 +43,7 @@ function HidingService:_setupSpots()
 		local promptAnchor = model:FindFirstChild("PromptAnchor")
 		if interior and promptAnchor then
 			local prompt = Instance.new("ProximityPrompt")
-			prompt.ActionText = "Hide"
+			prompt.ActionText = "Enter Closet"
 			prompt.ObjectText = "Wardrobe"
 			prompt.HoldDuration = 0
 			prompt.MaxActivationDistance = Config.HidingSpot.MaxActivationDistance
@@ -66,8 +71,8 @@ function HidingService:_onTriggered(player, spot)
 	elseif not spot.occupant and player:GetAttribute("State") == "Alive" then
 		self:_enter(player, spot)
 	end
-	-- Occupied by someone else -- no-op, per the accepted v1 tradeoff that
-	-- the shared prompt can't say "Hide" vs. "Leave" per simultaneous viewer.
+	-- Occupied by someone else -- no-op (see the file header on the
+	-- shared-prompt-text tradeoff).
 end
 
 function HidingService:_enter(player, spot)
@@ -85,12 +90,14 @@ function HidingService:_enter(player, spot)
 	character:PivotTo(spot.interior.CFrame)
 	humanoid.WalkSpeed = 0
 	player:SetAttribute("Hidden", true)
+	spot.prompt.ActionText = "Exit Closet"
 end
 
 function HidingService:_exit(player, spot)
 	spot.occupant = nil
 	self.occupantSpot[player] = nil
 	player:SetAttribute("Hidden", false)
+	spot.prompt.ActionText = "Enter Closet"
 
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -103,23 +110,29 @@ function HidingService:_exit(player, spot)
 	self.returnCFrame[player] = nil
 end
 
--- Player left mid-hide (disconnected) -- just clears the spot so someone
--- else can use it; nothing to restore for a player who's gone.
-function HidingService:_forceExit(player)
+-- Public: called whenever a player leaves the round (disconnect) or
+-- transitions out of being hideable (caught, died, timed out, escaped,
+-- respawned -- see PlayerService) without ever pressing E to leave on
+-- their own. Without this, a player who dies/respawns while Hidden would
+-- keep occupying that spot forever -- permanently blocking it for
+-- everyone AND permanently blocking themself from entering ANY spot,
+-- since _enter bails out early while self.occupantSpot[player] is set.
+function HidingService:ForceExit(player)
 	local spot = self.occupantSpot[player]
 	if spot then
 		spot.occupant = nil
+		spot.prompt.ActionText = "Enter Closet"
 	end
 	self.occupantSpot[player] = nil
 	self.returnCFrame[player] = nil
+	player:SetAttribute("Hidden", false)
 end
 
 -- Called by GameState at the start of every round so nobody carries a
 -- stale Hidden state (or a stale occupied spot) across rounds.
 function HidingService:ResetAll()
-	for player, spot in pairs(self.occupantSpot) do
-		spot.occupant = nil
-		player:SetAttribute("Hidden", false)
+	for player in pairs(self.occupantSpot) do
+		self:ForceExit(player)
 	end
 	self.occupantSpot = {}
 	self.returnCFrame = {}
