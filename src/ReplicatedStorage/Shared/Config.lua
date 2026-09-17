@@ -241,15 +241,13 @@ Config.Monsters = {
 		-- His mesh is already sized on its own, unrelated to `scale`
 		-- below (which the placeholder rig used, and which pathfinding
 		-- still uses for his agent radius) -- this knob controls just his
-		-- VISUAL size. 1 (no scaling at all -- ScaleTo only gets called
-		-- when this isn't exactly 1) turned out to still be his full raw
-		-- mesh size and still much too big, so this is a much more
-		-- aggressive guess. Still a guess -- this environment can't
-		-- render and check it -- so this is the fastest knob to just
-		-- tweak directly yourself and re-sync/replay rather than
-		-- round-tripping through me each time: smaller number = smaller
-		-- Thomas, no other side effects.
-		templateScale = 0.5,
+		-- VISUAL size. 1 (no scaling at all) was too big, 0.5 lost too
+		-- much of his presence -- splitting the difference. Still a
+		-- guess -- this environment can't render and check it -- so this
+		-- is the fastest knob to just tweak directly yourself and
+		-- re-sync/replay rather than round-tripping through me each
+		-- time: smaller number = smaller Thomas, no other side effects.
+		templateScale = 0.7,
 		color = Color3.fromRGB(20, 90, 160),
 		accentColor = Color3.fromRGB(200, 30, 30),
 		scale = 1.3,
