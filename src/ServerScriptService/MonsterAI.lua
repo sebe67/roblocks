@@ -37,11 +37,15 @@ local CHASE_GROWL_MAX_VOLUME = 0.7
 local CHASE_GROWL_FADE_TIME = 1.5
 
 -- _updateChaseProximityLaugh: how close (studs) the target needs to be
--- during Chase to trigger the evil-laugh one-shot, and the minimum gap
--- between two triggers so it can't fire every single frame while it
--- lingers inside that range.
+-- during Chase to trigger the evil laugh, and the gap between retriggers.
+-- It's not a single one-shot per chase -- as long as the target stays
+-- within CHASE_LAUGH_PROXIMITY, it keeps firing again every
+-- CHASE_LAUGH_COOLDOWN seconds for as long as that stays true; the
+-- cooldown only exists so it can't fire every single frame while
+-- lingering close, not to cap it to once. Lowered from 8s so the repeat
+-- actually reads as repeating instead of a single taunt.
 local CHASE_LAUGH_PROXIMITY = 15
-local CHASE_LAUGH_COOLDOWN = 8
+local CHASE_LAUGH_COOLDOWN = 4
 
 -- EXPERIMENTAL -- Chase obstacle-awareness. Everything tagged with this
 -- same "EXPERIMENTAL" word (these two constants, _hasClearLine,
@@ -1009,13 +1013,13 @@ function MonsterAI:_resolveIdleSoundId()
 	return def.idleSoundId ~= "" and def.idleSoundId or Config.Sounds.EvilLaugh
 end
 
--- One-shot: while actually Chasing (not just Patrolling with a noise
+-- Repeats for as long as it stays true, not a single one-shot per
+-- chase: while actually Chasing (not just Patrolling with a noise
 -- alert), if the target is within CHASE_LAUGH_PROXIMITY, play the same
--- evil-laugh sound the random Patrol tell uses. CHASE_LAUGH_COOLDOWN
--- stops it firing every single frame while the target lingers inside
--- that range -- it can fire again as soon as the cooldown clears, not
--- just once per chase, so closing back in after backing off re-triggers
--- it.
+-- evil-laugh sound the random Patrol tell uses -- then it can fire
+-- again the moment CHASE_LAUGH_COOLDOWN clears, and again after that,
+-- for as long as the target stays that close. The cooldown only exists
+-- so it can't fire every single frame while lingering inside range.
 function MonsterAI:_updateChaseProximityLaugh(targetRoot)
 	local laughId = self:_resolveIdleSoundId()
 	if laughId == "" then

@@ -148,13 +148,14 @@ are where the personality really lives:
   as `jumpscareSoundId`/`JumpscareScream`: falls back to
   `Config.Sounds.EvilLaugh` (`MonsterAI.lua`'s `_resolveIdleSoundId`) —
   right now that's one shared evil-laugh clip every monster uses both for
-  this random Patrol tell *and* as a second, new trigger: a one-shot the
-  instant a chasing monster gets within `CHASE_LAUGH_PROXIMITY` (15 studs)
-  of its target, on an 8-second cooldown (`CHASE_LAUGH_COOLDOWN`) so it
-  can't fire every frame while lingering that close — same sound, same
-  fallback, two separate trigger points, per request. Filling in an
-  individual monster's own `idleSoundId` later overrides both triggers for
-  just that monster at once.
+  this random Patrol tell *and* as a second, new trigger: repeating (not a
+  single one-shot per chase) every `CHASE_LAUGH_COOLDOWN` (4s) for as long
+  as a chasing monster stays within `CHASE_LAUGH_PROXIMITY` (15 studs) of
+  its target — the cooldown only exists so it can't fire every single
+  frame while lingering that close. Same sound, same fallback, two
+  separate trigger points, per request. Filling in an individual
+  monster's own `idleSoundId` later overrides both triggers for just that
+  monster at once.
 
 | Monster | `chaseSoundId` brief | `jumpscareSoundId` brief | `idleSoundId` brief |
 |---|---|---|---|
