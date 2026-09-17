@@ -217,7 +217,7 @@ function MazeGenerator.Generate()
 	-- radiates outward from where players actually begin.
 	local midX, midY = math.ceil(W / 2), math.ceil(H / 2)
 
-	local cells, edgeStyle = generateGrid(W, H, midX, midY)
+	local cells, edgeStyle, rooms = generateGrid(W, H, midX, midY)
 
 	-- Every wall/doorway-stub part is grown by this much (split evenly
 	-- across whichever ends the trim math computed) beyond its "exact"
@@ -233,7 +233,7 @@ function MazeGenerator.Generate()
 	storeModel.Name = "Store"
 
 	local folders = {}
-	for _, n in ipairs({ "Floors", "Walls", "Ceiling", "Fixtures", "Stations", "Doors", "Signs" }) do
+	for _, n in ipairs({ "Floors", "Walls", "Ceiling", "Fixtures", "Stations", "Doors", "Signs", "HidingSpots" }) do
 		local f = Instance.new("Folder")
 		f.Name = n
 		f.Parent = storeModel
@@ -560,6 +560,105 @@ function MazeGenerator.Generate()
 		end
 	end
 
+	-- Wardrobe hiding spot: a shallow box built flush against a real solid
+	-- wall segment (never a doorway/hallway gap -- see the placement pass
+	-- below, which only ever calls this with cells[x][y][dir] == true), with
+	-- its two door leaves left a DoorGap apart. Since the round locks the
+	-- camera to first-person at the character's head (SpectateController.lua),
+	-- a player standing at the returned InteriorAnchor and looking through
+	-- that gap sees a real sliver of the room -- no camera code needed, it
+	-- falls out of the geometry alone.
+	local function buildHidingSpot(x, y, dir)
+		local normal
+		if dir == "N" then
+			normal = Vector3.new(0, 0, -1)
+		elseif dir == "S" then
+			normal = Vector3.new(0, 0, 1)
+		elseif dir == "E" then
+			normal = Vector3.new(1, 0, 0)
+		else
+			normal = Vector3.new(-1, 0, 0)
+		end
+
+		local hs = Config.HidingSpot
+		local cellCenter = cellToWorld(x, y)
+
+		-- Distance from the cell center to the wall face, along normal, is
+		-- cellSize/2. The box's own center sits half its depth inboard of
+		-- that (with a hair of overlap so the back panel doesn't leave a
+		-- seam against the wall, same SEAM_OVERLAP reasoning buildWall uses).
+		local boxCenterDist = cellSize / 2 - hs.Depth / 2 - 0.05
+		local boxCenter = cellCenter + normal * boxCenterDist + Vector3.new(0, hs.Height / 2, 0)
+		-- LookVector faces INTO the room (opposite the outward wall normal),
+		-- same lookAt technique the jumpscare camera fix uses.
+		local boxCFrame = CFrame.lookAt(boxCenter, boxCenter - normal)
+
+		local model = Instance.new("Model")
+		model.Name = string.format("HidingSpot_%d_%d_%s", x, y, dir)
+
+		local woodColor = Color3.fromRGB(120, 90, 60)
+		local function panel(name, size, localCFrame, canCollide)
+			local p = Instance.new("Part")
+			p.Name = name
+			p.Anchored = true
+			p.Size = size
+			p.CFrame = boxCFrame * localCFrame
+			p.Material = Enum.Material.WoodPlanks
+			p.Color = woodColor
+			p.CanCollide = canCollide
+			p.Parent = model
+			return p
+		end
+
+		-- Local space (relative to boxCFrame): -Z is into the room (front,
+		-- where the door is), +Z is toward the wall (back).
+		panel("Back", Vector3.new(hs.Width, hs.Height, 0.3), CFrame.new(0, 0, hs.Depth / 2 - 0.15), true)
+		panel("Left", Vector3.new(0.3, hs.Height, hs.Depth), CFrame.new(-hs.Width / 2 + 0.15, 0, 0), true)
+		panel("Right", Vector3.new(0.3, hs.Height, hs.Depth), CFrame.new(hs.Width / 2 - 0.15, 0, 0), true)
+		panel("Top", Vector3.new(hs.Width, 0.3, hs.Depth), CFrame.new(0, hs.Height / 2 - 0.15, 0), false)
+
+		-- Two door leaves with a literal DoorGap between them -- the "see a
+		-- sliver of outside" gap.
+		local leafWidth = (hs.Width - hs.DoorGap) / 2
+		if leafWidth > 0.3 then
+			local leafX = hs.DoorGap / 2 + leafWidth / 2
+			panel("DoorLeft", Vector3.new(leafWidth, hs.Height, 0.3), CFrame.new(-leafX, 0, -hs.Depth / 2 + 0.15), true)
+			panel("DoorRight", Vector3.new(leafWidth, hs.Height, 0.3), CFrame.new(leafX, 0, -hs.Depth / 2 + 0.15), true)
+		end
+
+		-- Where the player stands while Hidden: just inside the door, at the
+		-- same root-height convention PlayerService:SpawnForRound uses (+3),
+		-- facing out through the gap.
+		local interiorDist = cellSize / 2 - hs.Depth + 1
+		local interiorPos = cellCenter + normal * interiorDist + Vector3.new(0, 3, 0)
+		local interior = Instance.new("Part")
+		interior.Name = "InteriorAnchor"
+		interior.Anchored = true
+		interior.CanCollide = false
+		interior.CanQuery = false
+		interior.Transparency = 1
+		interior.Size = Vector3.new(1, 1, 1)
+		interior.CFrame = CFrame.lookAt(interiorPos, interiorPos - normal)
+		interior.Parent = model
+
+		-- Where the ProximityPrompt lives, just outside the door in the
+		-- room -- reachable whether or not the spot is currently occupied.
+		local promptDist = cellSize / 2 - hs.Depth - 1
+		local promptPos = cellCenter + normal * promptDist + Vector3.new(0, 3, 0)
+		local promptAnchor = Instance.new("Part")
+		promptAnchor.Name = "PromptAnchor"
+		promptAnchor.Anchored = true
+		promptAnchor.CanCollide = false
+		promptAnchor.CanQuery = false
+		promptAnchor.Transparency = 1
+		promptAnchor.Size = Vector3.new(2, 2, 2)
+		promptAnchor.CFrame = CFrame.lookAt(promptPos, promptPos - normal)
+		promptAnchor.Parent = model
+
+		CollectionService:AddTag(model, "HidingSpot")
+		model.Parent = folders.HidingSpots
+	end
+
 	local exitDoor
 	local escapeZone
 
@@ -629,6 +728,67 @@ function MazeGenerator.Generate()
 	-- a door there anyway so there is always a real, findable exit.
 	if not exitDoor then
 		buildExitDoor(exitCell.x, exitCell.y)
+	end
+
+	-- Hiding spots: on average Config.Maze.HidingSpotChance of rooms gets
+	-- one wardrobe, built against a random one of that room's real solid
+	-- walls (a plain `cells[x][y][dir] == true`, never a doorway/hallway
+	-- gap -- those don't have a full wall to sit flush against -- and never
+	-- the exit-door wall). usedWallSegments dedupes by physical wall
+	-- (not by which room/direction it was seen from), since a solid
+	-- boundary between two different rooms would otherwise show up as a
+	-- valid candidate for both and could get two wardrobes built back to
+	-- back through the same wall.
+	local usedWallSegments = {}
+	local function wallSegmentKey(x, y, dir)
+		if dir == "E" then
+			return string.format("EW:%d,%d", x, y)
+		elseif dir == "W" then
+			return string.format("EW:%d,%d", x - 1, y)
+		elseif dir == "S" then
+			return string.format("NS:%d,%d", x, y)
+		else -- N
+			return string.format("NS:%d,%d", x, y - 1)
+		end
+	end
+
+	for _, room in ipairs(rooms) do
+		if math.random() < Config.Maze.HidingSpotChance then
+			local candidates = {}
+			for x = room.x1, room.x2 do
+				if cells[x][room.y1].N and not (x == exitCell.x and room.y1 == exitCell.y) then
+					table.insert(candidates, { x = x, y = room.y1, dir = "N" })
+				end
+				if cells[x][room.y2].S and not (x == exitCell.x and room.y2 == exitCell.y) then
+					table.insert(candidates, { x = x, y = room.y2, dir = "S" })
+				end
+			end
+			for y = room.y1, room.y2 do
+				if cells[room.x1][y].W and not (room.x1 == exitCell.x and y == exitCell.y) then
+					table.insert(candidates, { x = room.x1, y = y, dir = "W" })
+				end
+				if cells[room.x2][y].E and not (room.x2 == exitCell.x and y == exitCell.y) then
+					table.insert(candidates, { x = room.x2, y = y, dir = "E" })
+				end
+			end
+
+			-- Shuffle so, when the first pick is already used by a
+			-- neighboring room's own wardrobe, we try a different wall
+			-- instead of always giving up on the same one.
+			for i = #candidates, 2, -1 do
+				local j = math.random(1, i)
+				candidates[i], candidates[j] = candidates[j], candidates[i]
+			end
+
+			for _, c in ipairs(candidates) do
+				local key = wallSegmentKey(c.x, c.y, c.dir)
+				if not usedWallSegments[key] then
+					usedWallSegments[key] = true
+					buildHidingSpot(c.x, c.y, c.dir)
+					break
+				end
+			end
+		end
 	end
 
 	-- Entrance lobby signage + spawn points

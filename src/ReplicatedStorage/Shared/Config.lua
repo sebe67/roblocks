@@ -21,6 +21,11 @@ Config.Maze = {
 	HallwayChance = 0.4, -- of any room-to-room connection, the odds it's a wide open gap instead of a narrow doorway
 	DoorwayWidth = 6, -- narrow connections are this wide instead of the full room edge
 	MonsterSpawnExclusionCells = 4, -- monsters won't spawn/reposition within this many cells of the entrance at round start
+	-- Rolled once per room (see MazeGenerator's placement pass): on average
+	-- 1-in-3ish rooms gets a wardrobe hiding spot, built flush against one
+	-- of that room's real solid walls (never a doorway/hallway gap, and
+	-- never the exit-door wall).
+	HidingSpotChance = 0.3,
 	ZoneAccentChance = 0.15, -- chance a wall/shelf ignores its zone color and picks any palette color instead
 	-- The grid is split into four roughly-quadrant color "wings" so wall
 	-- color reads as "you're in a different part of the store" instead of
@@ -96,6 +101,33 @@ Config.Round = {
 Config.Player = {
 	WalkSpeed = 16,
 	SprintSpeed = 25,
+	-- Sprinting continuously drains stamina over SprintDuration seconds,
+	-- then forces a walk until stamina regenerates back up to at least
+	-- MinSprintFraction. Regenerates over SprintRegenDuration seconds while
+	-- not sprinting -- SprintRegenHiddenMultiplier x faster while Hidden in
+	-- a wardrobe (HidingService), a small reward for actually using a
+	-- hiding spot instead of just running. Tracked entirely client-side
+	-- (SprintController.lua), same as the sprint toggle itself always was
+	-- -- the server-side WalkSpeed=0 freeze while Hidden (and =0 on catch)
+	-- is what actually keeps this un-cheatable, not the stamina math.
+	SprintDuration = 10,
+	SprintRegenDuration = 20,
+	SprintRegenHiddenMultiplier = 2,
+	MinSprintFraction = 0.15, -- stops instant flicker at the empty edge
+}
+
+-- A wardrobe/closet prop MazeGenerator places against a room's real solid
+-- walls (see Config.Maze.HidingSpotChance). DoorGap is a literal gap left
+-- between its two door leaves -- since the game's camera is locked to
+-- first-person at the character's head (SpectateController.lua), a hidden
+-- player naturally sees a sliver of the room through that gap with no
+-- extra camera code needed.
+Config.HidingSpot = {
+	Width = 6,
+	Depth = 4,
+	Height = 8,
+	DoorGap = 1.6,
+	MaxActivationDistance = 8,
 }
 
 -- /spectate and /back debug chat commands (Main.server.lua, PlayerService,

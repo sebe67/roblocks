@@ -503,7 +503,13 @@ local function playersToCheck()
 		if player:GetAttribute("State") == "Alive" and player.Character then
 			local hum = player.Character:FindFirstChildOfClass("Humanoid")
 			local root = player.Character:FindFirstChild("HumanoidRootPart")
-			if hum and root and hum.Health > 0 and not player:GetAttribute("Invulnerable") then
+			if
+				hum
+				and root
+				and hum.Health > 0
+				and not player:GetAttribute("Invulnerable")
+				and not player:GetAttribute("Hidden")
+			then
 				table.insert(list, { player = player, root = root })
 			end
 		end

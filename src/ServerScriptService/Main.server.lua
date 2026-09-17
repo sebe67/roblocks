@@ -39,6 +39,7 @@ local MonsterSpawner = require(script.Parent.MonsterSpawner)
 local MinigameService = require(script.Parent.MinigameService)
 local ExitService = require(script.Parent.ExitService)
 local PlayerService = require(script.Parent.PlayerService)
+local HidingService = require(script.Parent.HidingService)
 local GameState = require(script.Parent.GameState)
 
 local maze = MazeGenerator.Generate()
@@ -54,6 +55,7 @@ end
 local exitService = ExitService.new(maze)
 local minigameService = MinigameService.new(maze, exitService)
 local playerService = PlayerService.new(maze)
+local hidingService = HidingService.new()
 
 MonsterAI.SetCatchHandler(function(player, monsterId, monsterModel)
 	playerService:CatchPlayer(player, monsterId, monsterModel)
@@ -62,7 +64,7 @@ exitService:SetEscapeHandler(function(player)
 	playerService:MarkEscaped(player)
 end)
 
-local gameState = GameState.new(maze, playerService, monsters, minigameService, exitService)
+local gameState = GameState.new(maze, playerService, monsters, minigameService, exitService, hidingService)
 
 -- Debug commands, gated to your own username so anyone else joining the
 -- game can't trigger them. Checked against Name rather than UserId since

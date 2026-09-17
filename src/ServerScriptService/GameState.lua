@@ -13,13 +13,14 @@ local StoreTheme = require(script.Parent.StoreTheme)
 local GameState = {}
 GameState.__index = GameState
 
-function GameState.new(maze, playerService, monsters, minigameService, exitService)
+function GameState.new(maze, playerService, monsters, minigameService, exitService, hidingService)
 	local self = setmetatable({}, GameState)
 	self.maze = maze
 	self.playerService = playerService
 	self.monsters = monsters
 	self.minigameService = minigameService
 	self.exitService = exitService
+	self.hidingService = hidingService
 	self.phase = "Waiting"
 
 	self.phaseEvent = Net.GetEvent("RoundPhase")
@@ -78,6 +79,9 @@ function GameState:_playRound()
 	self.playerService.roundActive = true
 	self.minigameService:Reset()
 	self.exitService:Reset()
+	if self.hidingService then
+		self.hidingService:ResetAll()
+	end
 	self:_resetOvertimeVisuals()
 	MonsterAI.ExitOvertime()
 	MonsterSpawner.RepositionAll(self.monsters, self.maze)

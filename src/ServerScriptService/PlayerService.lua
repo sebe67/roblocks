@@ -427,6 +427,7 @@ function PlayerService:SpawnForRound(player)
 	player:SetAttribute("State", "Alive")
 	player:SetAttribute("Invulnerable", false)
 	player:SetAttribute("Untouchable", false) -- safety net in case /spectate2 was left on without /back
+	player:SetAttribute("Hidden", false) -- safety net in case a wardrobe hide was still active
 	self.spawnEvent:FireClient(player)
 end
 

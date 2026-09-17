@@ -325,7 +325,34 @@ in Workspace. A totally blank new place works fine.
   the two are easy to tell apart at a glance. Meant to make it obvious
   which state a monster is actually in while chasing behavior is still
   being tuned — remove it once that's no longer needed.
-- **Sprinting**: hold Shift, infinite, no stamina bar (`SprintController.lua`).
+- **Sprinting**: hold Shift for `Config.Player.SprintSpeed`, drains a
+  stamina meter over `Config.Player.SprintDuration` (10s) of continuous
+  use (`SprintController.lua`). Hit empty and you're forced to walk until
+  it regenerates back up to `MinSprintFraction` — regen takes
+  `SprintRegenDuration` (20s) normally, `SprintRegenHiddenMultiplier` (2x)
+  faster while hiding in a wardrobe. A thin bar at the bottom-center of the
+  screen fades in whenever it's not full or you're holding Shift, and
+  fades back out once it's topped off and you've let go — tracked entirely
+  client-side (same as the sprint toggle itself always was); the server's
+  own authoritative `WalkSpeed` writes (catch freeze, hiding freeze) are
+  what actually keep it un-cheatable, not this meter. Added specifically
+  so a chase isn't just "hold Shift forever" — see hiding spots below for
+  the other half of that fix.
+- **Hiding spots** (`HidingService.lua` + `MazeGenerator.lua`'s
+  `buildHidingSpot`): on average `Config.Maze.HidingSpotChance` (~1-in-3)
+  of rooms gets a wardrobe, built flush against one of that room's real
+  solid walls (never a doorway/hallway gap, never the exit-door wall). **E**
+  both enters and leaves — a single shared `ProximityPrompt` per wardrobe
+  toggles whoever's using it (a second player can't also pile into an
+  occupied one). While hidden: `humanoid.WalkSpeed = 0` (same freeze
+  pattern `PlayerService:CatchPlayer` uses) and `player:GetAttribute
+  ("Hidden")` is set, which `MonsterAI.lua`'s `playersToCheck()` filters
+  out before any sight/catch check runs — hidden means genuinely invisible
+  to every monster, not just harder to spot. The wardrobe's own door has a
+  literal `Config.HidingSpot.DoorGap` between its two leaves — since the
+  round locks the camera to first-person at the character's head
+  (`SpectateController.lua`), standing at the interior anchor and facing
+  that gap shows a real sliver of the room with zero extra camera code.
 - **View bob** (`ViewBobController.lua`): a subtle first-person camera bob
   while moving, scaled up a bit while sprinting — cycles per stud traveled
   rather than per second, so it naturally speeds up with your actual speed
@@ -870,6 +897,7 @@ src/ServerScriptService/
   MinigameService.lua                Station wiring, noise pulses, exit-unlock trigger
   ExitService.lua                    Exit door lock/unlock + escape-zone detection
   PlayerService.lua                  Round state per player, catch/respawn/spectate/escape, flashlight toggle+aim, noclip
+  HidingService.lua                  Wardrobe ProximityPrompt wiring, Hidden attribute + WalkSpeed freeze
   GameState.lua                      Waiting → Intermission → Playing → Results loop, Overtime trigger
 src/ServerStorage/
   MonsterModels/<Name>.rbxm           Real rig to clone for a monster (see "Important limitations" below) -- optional per monster, falls back to the placeholder rig if absent
@@ -877,7 +905,7 @@ src/StarterPlayerScripts/
   Main.client.lua                    Boots all client controllers, each wrapped in pcall so one's error can't skip the rest
   UIUtil.lua                         Shared UI-building helpers
   CursorLock.lua                     Frees the mouse for clickable menus (fights the camera every frame)
-  SprintController.lua               Shift-to-sprint
+  SprintController.lua               Shift-to-sprint with a drain/regen stamina meter + fade in/out bar
   ViewBobController.lua               Subtle first-person camera bob, scaled up while sprinting
   FlashlightController.lua            Sends the F-key toggle request + throttled camera-pitch reports for beam tilt
   NoclipController.lua                Drives free-fly movement for /spectate (server only toggles the "Flying" state)
