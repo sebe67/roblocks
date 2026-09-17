@@ -94,7 +94,7 @@ function AmbienceController.Init(context)
 		if overtimeActive then
 			t = math.max(t, 0.6) -- never lets you forget, even mid-corridor
 		end
-		heartbeat.Volume = t * 0.8
+		heartbeat.Volume = t * 1.1 -- was 0.8, reported not loud enough
 		heartbeat.PlaybackSpeed = 1 + t * 0.5
 		if t > 0 and not heartbeat.Playing then
 			heartbeat:Play()

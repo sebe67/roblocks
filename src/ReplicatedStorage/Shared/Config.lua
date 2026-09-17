@@ -156,6 +156,12 @@ Config.Sounds = {
 	-- individual monsters' jumpscareSoundId later (Config.Monsters) to
 	-- override just that one without touching this or any code again.
 	JumpscareScream = "rbxassetid://137188242007840",
+	-- Continuous growl/tension loop every monster plays while in Chase,
+	-- fading in/out over MonsterAI.lua's CHASE_GROWL_FADE_TIME rather than
+	-- snapping on/off -- distinct from chaseSoundId (a one-shot stinger
+	-- fired only once, the instant Chase begins). One shared loop for
+	-- every monster for now, same reasoning as JumpscareScream above.
+	ChaseGrowl = "",
 	HeartbeatMaxDistance = 55, -- studs at which the heartbeat starts fading in
 	HeartbeatMinDistance = 10, -- studs at which the heartbeat hits full volume/pitch
 }

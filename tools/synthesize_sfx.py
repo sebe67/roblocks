@@ -266,6 +266,24 @@ def sfx_blackout_sting():
     return normalize(sig, 0.9)
 
 
+def sfx_chase_growl():
+    # Low guttural rumble (fundamental + distorted harmonics, tanh for a
+    # growl edge) under an irregular breathing-like amplitude wobble --
+    # loops seamlessly (loop_crossfade) since this plays continuously,
+    # faded in/out by volume rather than started/stopped per chase.
+    dur = 3.0
+    t = t_axis(dur)
+    base_freq = 60 * (1 + 0.03 * np.sin(2 * np.pi * 0.4 * t))
+    phase = 2 * np.pi * np.cumsum(base_freq) / SR
+    tone = np.sin(phase) + 0.5 * np.sin(2 * phase) + 0.3 * np.sin(3 * phase)
+    tone = np.tanh(2.0 * tone)
+    breath = 0.6 + 0.4 * np.sin(2 * np.pi * 0.5 * t) * (0.7 + 0.3 * np.sin(2 * np.pi * 1.3 * t))
+    noise = one_pole_lowpass(white_noise(dur, seed=60), 0.05) * 0.25
+    sig = (tone * breath) + noise
+    sig = normalize(sig, 0.85)
+    return loop_crossfade(sig, int(SR * 0.4))
+
+
 GLOBAL_SFX = {
     "store_ambience": sfx_store_ambience,
     "heartbeat": sfx_heartbeat,
@@ -279,6 +297,7 @@ GLOBAL_SFX = {
     "minigame_fail": sfx_minigame_fail,
     "overtime_warning": sfx_overtime_warning,
     "blackout_sting": sfx_blackout_sting,
+    "chase_growl": sfx_chase_growl,
 }
 
 # ---------------------------------------------------------------- Monsters

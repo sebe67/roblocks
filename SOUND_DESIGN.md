@@ -15,10 +15,11 @@ needs your account either way, since Roblox only accepts audio through
 Studio/the Creator Dashboard, moderated. What I *can* do is synthesize
 original audio with plain DSP (sine/noise/envelope math via numpy, no
 samples, nothing lifted from anywhere), so that's what's in `sfx/placeholder/`
-in this repo: **39 finished, non-infringing WAV files, one for every single
-`Config.Sounds` / per-monster slot** — including Tung Tung Tung Sahur and
-`OvertimeWarning`/`BlackoutSting`, both added to the roster/Config after the
-original 34 were generated, backfilled the same way.
+in this repo: **40 finished, non-infringing WAV files, one for every single
+`Config.Sounds` / per-monster slot** — including Tung Tung Tung Sahur,
+`OvertimeWarning`/`BlackoutSting`, and `ChaseGrowl`, all added to the
+roster/Config after the original 34 were generated, backfilled the same
+way.
 
 They're synthesized, not recorded — so `chase_barney.wav` is a low
 distorted-roar-style stinger and `idle_george.wav` is a rapid high tremolo
@@ -48,6 +49,7 @@ Global (`sfx/placeholder/*.wav` → `Config.Sounds.*`):
 | `minigame_fail.wav` | `MinigameFail` |
 | `overtime_warning.wav` | `OvertimeWarning` |
 | `blackout_sting.wav` | `BlackoutSting` |
+| `chase_growl.wav` | `ChaseGrowl` |
 
 Per-monster (`chase_<id>.wav` / `jumpscare_<id>.wav` / `idle_<id>.wav`, `<id>`
 lowercased, e.g. `chase_thomas.wav`, `chase_tungsahur.wav`) → that monster's `chaseSoundId` /
@@ -190,6 +192,19 @@ license on the specific file you grab, not just the site's homepage:
   near"); making it per-monster later would mean the client looking up the
   nearest monster's `def.id` and checking for a per-monster override before
   falling back to this shared one, no bigger a change than that.
+- **Chase growl** (`Config.Sounds.ChaseGrowl`): a continuous, positional
+  growl/tension loop each monster plays while actually in Chase (including
+  Overtime godmode), fading in and back out over ~1.5s
+  (`MonsterAI.lua`'s `CHASE_GROWL_FADE_TIME`/`_updateChaseGrowlAudio`)
+  rather than snapping on/off — silent the entire time it's Patrolling.
+  Distinct from `chaseSoundId` (a one-shot stinger that fires once, right
+  when Chase begins) — this is the ongoing "it's still coming" dread cue
+  for the whole chase, and since it's a real `Sound` on each monster's own
+  root, it's genuinely positional/3D (closer monster = louder) even though
+  every monster currently shares the same clip. Brief: a low, guttural,
+  looping rumble/growl — something that reads as "breathing/stalking,"
+  not a one-shot roar (that's what `chaseSoundId` is for). Toolbox search
+  ideas: "monster growl loop", "creature breathing", "horror drone growl".
 - **Footstep character**: volume and pitch already scale up automatically
   when a monster shifts from Patrol → Chase (the only two states that
   exist), so footsteps alone telegraph how much danger you're in.

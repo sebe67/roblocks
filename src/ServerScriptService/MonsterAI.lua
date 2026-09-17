@@ -32,6 +32,10 @@ local CHASE_GIVEUP_TIME = 5
 -- hack the way the old Humanoid:Move()-based one did.
 local TURN_RATE = math.rad(300)
 
+-- _updateChaseGrowlAudio's fade target/timing -- see that function.
+local CHASE_GROWL_MAX_VOLUME = 0.7
+local CHASE_GROWL_FADE_TIME = 1.5
+
 -- EXPERIMENTAL -- Chase obstacle-awareness. Everything tagged with this
 -- same "EXPERIMENTAL" word (these two constants, _hasClearLine,
 -- _ensureChasePath, _followChasePath, _pathToChase, the chaseCurrentPath/
@@ -379,6 +383,20 @@ function MonsterAI.new(def, maze)
 		Name = "Footsteps",
 		Volume = 0.4,
 		PlaybackSpeed = def.footstepPitch or 1,
+		MaxDistance = def.footstepMaxDistance or 60,
+		SoundGroup = getMonsterSoundGroup(),
+	})
+	-- Continuous growl/tension loop, silent while Patrolling and faded in
+	-- while Chasing (see _updateChaseGrowlAudio) -- distinct from
+	-- chaseSoundId (a one-shot stinger fired only at the exact instant
+	-- Chase begins). One shared sound for every monster for now
+	-- (Config.Sounds.ChaseGrowl), same reasoning as JumpscareScream's
+	-- shared fallback -- cheaper to source and ship than 9 unique loops,
+	-- and it's still genuinely positional/3D per monster since each one
+	-- gets its own Sound instance on its own root.
+	self.chaseGrowlSound = SoundKit.CreateLoop3D(self.root, Config.Sounds.ChaseGrowl, {
+		Name = "ChaseGrowl",
+		Volume = 0,
 		MaxDistance = def.footstepMaxDistance or 60,
 		SoundGroup = getMonsterSoundGroup(),
 	})
@@ -952,6 +970,29 @@ function MonsterAI:_updateFootstepAudio()
 	end
 end
 
+-- Fades the growl loop in over CHASE_GROWL_FADE_TIME seconds when Chase
+-- starts and back out over the same span when it ends, rather than an
+-- abrupt cut/snap-in -- a smooth ramp reads as "closing in"/"backing off"
+-- instead of a jarring toggle.
+function MonsterAI:_updateChaseGrowlAudio(dt)
+	local sound = self.chaseGrowlSound
+	if not sound or sound.SoundId == "" then
+		return
+	end
+	local target = (self.state == "Chase") and CHASE_GROWL_MAX_VOLUME or 0
+	local step = (CHASE_GROWL_MAX_VOLUME / CHASE_GROWL_FADE_TIME) * dt
+	if sound.Volume < target then
+		sound.Volume = math.min(target, sound.Volume + step)
+	elseif sound.Volume > target then
+		sound.Volume = math.max(target, sound.Volume - step)
+	end
+	if sound.Volume > 0 and not sound.Playing then
+		sound:Play()
+	elseif sound.Volume <= 0 and sound.Playing then
+		sound:Stop()
+	end
+end
+
 -- Overtime: no sight/range checks, just always know exactly where the
 -- nearest alive player is and head straight for them at a much higher
 -- speed. Wall-restricted like everything else, though -- _faceAndMove's
@@ -978,6 +1019,7 @@ function MonsterAI:_updateGodChase(dt)
 
 	self.target = nearestPlayer.Character
 	self:_updateFootstepAudio()
+	self:_updateChaseGrowlAudio(dt)
 	self.currentPath = nil
 	local speed = def.chaseSpeed * Config.Round.OvertimeSpeedMultiplier
 	if self:_hasClearLine(nearestRoot) then
@@ -1037,6 +1079,7 @@ function MonsterAI:Update(dt)
 	end
 
 	self:_updateFootstepAudio()
+	self:_updateChaseGrowlAudio(dt)
 
 	if self.state == "Chase" then
 		local root = self.target and self.target:FindFirstChild("HumanoidRootPart")
@@ -1134,6 +1177,10 @@ function MonsterAI:SetPaused(paused)
 		-- stop the way the old physics-driven movement needed.
 		if self.footstepSound then
 			self.footstepSound:Stop()
+		end
+		if self.chaseGrowlSound then
+			self.chaseGrowlSound.Volume = 0
+			self.chaseGrowlSound:Stop()
 		end
 		-- Godmode is strictly a this-round-only escalation.
 		self.god = false
