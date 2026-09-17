@@ -378,7 +378,7 @@ in Workspace. A totally blank new place works fine.
   once you want the manual choice back.
 - **Real bug found alongside the above**: `GameState:_checkRoundEnd`
   originally only treated `"Alive"` and `"Dead"` as "still in progress" —
-  it never accounted for `"Caught"`, the ~`JumpscareDuration` (2.6s) window
+  it never accounted for `"Caught"`, the ~`JumpscareDuration` window
   between being hit and actually being marked `"Dead"`. This poll runs
   once a second, comfortably inside that window, so a solo (or
   last-remaining) player sitting in `"Caught"` could get read as "everyone
@@ -387,6 +387,35 @@ in Workspace. A totally blank new place works fine.
   respawn. That's very likely what "the round-over screen stays up a long
   time after death" actually was. Fixed by adding `"Caught"` to the same
   guard as `"Alive"`/`"Dead"`.
+- **Jumpscare closeup rework**: `JumpscareController.lua` no longer shows a
+  flat color card — it renders an actual closeup of the specific monster
+  that caught you via a `ViewportFrame` (a GUI element with its own
+  isolated 3D scene, entirely separate from the real game world).
+  `PlayerService:CatchPlayer` now hands the live monster instance itself
+  (not just its id) through to the client — it's already parented under
+  `workspace` so it's already replicated, no extra work needed — and the
+  client clones it into that scene and points a camera tight on its
+  `Head` (falls back to `Face`, then the model's bounding-box center; see
+  the Thomas note above). Since the clone is the only thing in that
+  isolated scene, everything else in frame is naturally solid black with
+  no extra work. Effects: the viewport camera jitters position/rotation
+  every single rendered frame for a high-frequency shake, decoupled
+  entirely from your real game camera (which no longer gets its own FOV
+  kick — pointless once the real world is fully covered); the viewport's
+  built-in `LightColor`/`Ambient` (no separate Light instance needed)
+  re-randomize on a short timer for an unstable-bulb flicker; a
+  translucent full-screen overlay flickers transparency/tint for
+  procedural static (not a real grain texture — that needs an actual
+  texture asset uploaded on your end, which nothing in this sandboxed
+  environment can source or verify); and the camera punches in from very
+  close before easing out to its held distance right at the start. The
+  clone strips its `NameTag`/`StateTag` billboards and any `Sound`
+  (footstep loops clone with whatever `Playing` state they had — a
+  ViewportFrame only isolates rendering, not audio, so an already-playing
+  clone would've audibly doubled up). **Deferred, reminder tracked, not
+  built yet:** a pulsing dark/red edge vignette that tightens as the shot
+  holds. `Config.Round.JumpscareDuration` is now 1.5s (was 2.6s) — also
+  what gates the auto-respawn delay above, so both always match.
 - **Round loop** (`GameState.lua`): Waiting → Intermission countdown →
   Playing → Results, looping forever. A round also force-ends after 10
   minutes so nobody's stuck in a stalemate.
@@ -699,9 +728,15 @@ strips out physical push-back regardless, so this doesn't reintroduce the
 old shoving problem. `MonsterAI:_onTouch` connects to every one of those
 parts instead of just the root for the same reason.
 
-One monster currently has a template wired in as a working example:
-Peppa uses `ServerStorage.MonsterModels.Peppa` if present (`Config.lua`'s
-`templateModel = "Peppa"`), falling back to her placeholder otherwise.
+Two monsters currently have a template wired in as a working example:
+Peppa (`ServerStorage.MonsterModels.Peppa`) and Thomas
+(`ServerStorage.MonsterModels.Thomas`), both via `templateModel` in
+`Config.lua`, both falling back to their placeholder if the model's ever
+missing. Thomas's rig has no `Head` part (his face is on the front of the
+boiler, named `Face` instead) — worth knowing since a few other systems
+(the jumpscare closeup below) look for `Head` first and fall back from
+there; his `NameTag`/`StateTag` billboards end up anchored to `Face`
+instead, same as every other per-monster HUD element.
 
 **Other things you'll want to do before this feels finished:**
 - **Audio is wired up but empty.** Footsteps (3D, pitch/volume scale with

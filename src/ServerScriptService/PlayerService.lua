@@ -430,7 +430,7 @@ function PlayerService:SpawnForRound(player)
 	self.spawnEvent:FireClient(player)
 end
 
-function PlayerService:CatchPlayer(player, monsterId)
+function PlayerService:CatchPlayer(player, monsterId, monsterModel)
 	if player:GetAttribute("Untouchable") then
 		-- /spectate2 (EnableTestSpectate): monsters see and chase this
 		-- player completely normally -- this is the ONLY thing that
@@ -452,7 +452,12 @@ function PlayerService:CatchPlayer(player, monsterId)
 		humanoid.PlatformStand = true
 	end
 
-	self.jumpscareEvent:FireClient(player, monsterId)
+	-- monsterModel is the actual live monster instance that caught this
+	-- player (see MonsterAI:_onTouch) -- it's already parented under
+	-- workspace, so it's already replicated to this client, and the
+	-- jumpscare clones it for a closeup shot of the real rig instead of
+	-- just knowing which species caught them.
+	self.jumpscareEvent:FireClient(player, monsterId, monsterModel)
 
 	task.delay(Config.Round.JumpscareDuration, function()
 		if player.Parent then

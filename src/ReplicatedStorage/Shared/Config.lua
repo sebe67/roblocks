@@ -78,7 +78,7 @@ Config.Round = {
 	IntermissionTime = 5, -- was 15; lowered for faster test iteration
 	RespawnInvulnerability = 3,
 	ResultsScreenTime = 14,
-	JumpscareDuration = 2.6,
+	JumpscareDuration = 1.5, -- was 2.6, shortened per request; also gates the auto-respawn delay in PlayerService:CatchPlayer
 	-- Dying is never a dead end on its own -- Respawn/Spectate stays live and
 	-- the round keeps running for anyone still Alive or deciding. This is
 	-- the "how long do you have to actually escape" clock instead.
@@ -233,6 +233,11 @@ Config.Monsters = {
 	{
 		id = "Thomas",
 		displayName = "Thomas the Tank Engine",
+		-- TEST: real mesh rig cloned from ServerStorage.MonsterModels.Thomas
+		-- (see MonsterAI.lua's createRig) instead of the blocky placeholder,
+		-- when that model exists. Remove this field to go back to the
+		-- placeholder rig for this monster specifically.
+		templateModel = "Thomas",
 		color = Color3.fromRGB(20, 90, 160),
 		accentColor = Color3.fromRGB(200, 30, 30),
 		scale = 1.3,

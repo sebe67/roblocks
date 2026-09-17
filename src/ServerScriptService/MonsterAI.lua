@@ -424,7 +424,10 @@ function MonsterAI:_onTouch(hit)
 	end
 	self.catchCooldown[player] = os.clock() + 2
 	if catchHandler then
-		catchHandler(player, self.def.id)
+		-- self.model is handed along so the jumpscare can clone this
+		-- exact monster's actual rig/mesh for its closeup shot instead of
+		-- just knowing its id -- see PlayerService:CatchPlayer.
+		catchHandler(player, self.def.id, self.model)
 	end
 	self:_setState("Patrol")
 	self.target = nil
