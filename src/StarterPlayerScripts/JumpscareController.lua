@@ -193,11 +193,11 @@ function JumpscareController.Init(context)
 		-- Falls back to the shared Config.Sounds.JumpscareScream when this
 		-- monster doesn't have its own jumpscareSoundId set -- currently
 		-- that's every monster, so this is "the one scream everyone uses"
-		-- until individual monsters get their own.
+		-- until individual monsters get their own. Plays instantly, same
+		-- moment as Caught -- was staggered 0.15s later, but that read as
+		-- a delay rather than a deliberate one-two beat.
 		local screamId = def.jumpscareSoundId ~= "" and def.jumpscareSoundId or Config.Sounds.JumpscareScream
-		task.delay(0.15, function()
-			SoundKit.PlayUI(screamId, { Volume = 1, PlaybackSpeed = pitch })
-		end)
+		SoundKit.PlayUI(screamId, { Volume = 1, PlaybackSpeed = pitch })
 
 		if not (monsterModel and monsterModel.Parent) then
 			-- Safety net: no live instance to clone (shouldn't normally

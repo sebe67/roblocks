@@ -126,9 +126,11 @@ are where the personality really lives:
 
 - **`chaseSoundId`** — fires once, the instant it spots you and locks into a
   chase. This is the "oh no" stinger.
-- **`jumpscareSoundId`** — fires in your ear (2D, not positional) when it
-  actually catches you, ~0.15s after the `Caught` impact sound. This is the
-  scream/gotcha moment. **Currently empty for every monster on purpose**:
+- **`jumpscareSoundId`** — fires in your ear (2D, not positional) the
+  instant it catches you, at the same moment as the `Caught` impact sound
+  (was staggered 0.15s later, but that read as a delay rather than a
+  deliberate beat). This is the scream/gotcha moment. **Currently empty for
+  every monster on purpose**:
   `JumpscareController.lua` falls back to `Config.Sounds.JumpscareScream`
   whenever a monster's own slot is blank, so right now every monster shares
   one scream (`sfx/sourced/jumpscare_scream.mp3` — a real sourced sound,
