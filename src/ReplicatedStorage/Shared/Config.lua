@@ -240,11 +240,16 @@ Config.Monsters = {
 		templateModel = "Thomas",
 		-- His mesh is already sized on its own, unrelated to `scale`
 		-- below (which the placeholder rig used, and which pathfinding
-		-- still uses for his agent radius) -- reported "a little too big"
-		-- at scale (1.3), so this knob controls just his VISUAL size.
-		-- This is a guess (this environment can't preview it live) --
-		-- tune it down further (or up) based on how he actually looks.
-		templateScale = 1,
+		-- still uses for his agent radius) -- this knob controls just his
+		-- VISUAL size. 1 (no scaling at all -- ScaleTo only gets called
+		-- when this isn't exactly 1) turned out to still be his full raw
+		-- mesh size and still much too big, so this is a much more
+		-- aggressive guess. Still a guess -- this environment can't
+		-- render and check it -- so this is the fastest knob to just
+		-- tweak directly yourself and re-sync/replay rather than
+		-- round-tripping through me each time: smaller number = smaller
+		-- Thomas, no other side effects.
+		templateScale = 0.5,
 		color = Color3.fromRGB(20, 90, 160),
 		accentColor = Color3.fromRGB(200, 30, 30),
 		scale = 1.3,
@@ -256,8 +261,8 @@ Config.Monsters = {
 		hearingRadius = 26,
 		loseSightTime = 5,
 		repathInterval = 0.5,
-		quirk = "wideBody", -- too wide for narrow doorways -- can only cross rooms via hallway-style gaps
-		pathAgentRadius = 3.5, -- vs. the ~2 everyone else uses; this alone makes narrow doorways impassable to his pathfinding
+		quirk = "wideBody", -- was 3.5 (fully impassable at the current 6-stud DoorwayWidth -- 2*3.5=7 > 6 -- which could leave him with zero valid route and freeze him solid if his position only had doorway-style connections nearby); lowered so he still needs a little more clearance than everyone else but can actually get through a standard doorway
+		pathAgentRadius = 2.5, -- vs. the ~2 everyone else uses (6 > 2*2.5=5, comfortably passable)
 		jumpscareColor = Color3.fromRGB(20, 90, 160),
 		flavor = "A really useful engine. Useful for absolutely flattening you.",
 		footstepSoundId = "rbxasset://sounds/action_footsteps_plastic.mp3",

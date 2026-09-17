@@ -454,7 +454,7 @@ in Workspace. A totally blank new place works fine.
 |---|---|---|
 | Curious George | fast | *(no coded quirk yet — his `erratic` tag is currently just flavor; see below)* |
 | Peppa Pig | medium | short speed bursts ("snort") while chasing |
-| Thomas the Tank Engine | slow patrol, very fast chase | **too wide for narrow doorways** while patrolling — can only cross between rooms via the wider hallway-style gaps. Chase currently ignores this (see below) |
+| Thomas the Tank Engine | slow patrol, very fast chase | slightly wider `pathAgentRadius` than everyone else — a little more selective about routes, but no longer flatly blocked from narrow doorways (see below) |
 | Barney | slow, huge | loud footsteps (bigger hearing radius) — telegraphed |
 | The Grinch | fast | faster and sees further in cells whose ceiling fixture is actually dead |
 | Kung Fu Panda | medium | occasional straight-line dash burst |
@@ -463,14 +463,31 @@ in Workspace. A totally blank new place works fine.
 | Tung Tung Tung Sahur | slow patrol, decent chase, huge and loud | occasional speed burst while chasing (like Peppa/Po) that also thuds the ground loud enough to draw any monster within 45 studs toward the commotion |
 
 Thomas's restriction isn't a special-cased graph — it falls out naturally
-from giving him a much larger `pathAgentRadius` in `MonsterAI.lua`'s
+from giving him a larger `pathAgentRadius` in `MonsterAI.lua`'s
 PathfindingService calls than every other monster. A bigger agent radius
-makes Roblox's navmesh solver treat narrow doorways as too tight to fit
-through, so he's automatically routed only through wide hallway gaps and
-open rooms whenever he's actually pathfinding, with zero bespoke pathing
-code. This now applies during Chase too, not just Patrol, since the
-EXPERIMENTAL obstacle-awareness (see "Sight-based AI" above) reuses the
-same `pathAgentRadius` for his Chase reroute.
+makes Roblox's navmesh solver treat narrow passages as too tight to fit
+through (roughly: a corridor needs to be wider than `2 * AgentRadius` to
+be navigable), so he gets automatically routed away from anything too
+tight, with zero bespoke pathing code. This now applies during Chase too,
+not just Patrol, since the EXPERIMENTAL obstacle-awareness (see "Sight-based
+AI" above) reuses the same `pathAgentRadius` for his Chase reroute.
+
+**This was originally tuned too aggressively.** `pathAgentRadius = 3.5`
+against `Config.Maze.DoorwayWidth = 6` needs `6 > 2*3.5 = 7`, which is
+false — every single narrow doorway was flatly impassable to his
+pathfinding, not just "less convenient." That's fine if he always has
+*some* hallway-style route available, but if his position ever ended up
+surrounded only by doorway-style connections (this map's connector type
+per room-to-room link is randomized — see `Config.Maze.HallwayChance`),
+he'd have zero valid route at all and freeze completely, facing whatever
+he was last trying to reach. Lowered to `2.5` (`6 > 2*2.5 = 5`,
+comfortably passable) — he's still slightly more restricted than the ~2
+everyone else uses, but can no longer get permanently stuck with nowhere
+to go. This does retire most of his original "can't fit through doorways"
+bite as a player-facing evasion tactic; if you want that back with a
+guaranteed-navigable map instead, the alternative is widening
+`Config.Maze.DoorwayWidth` globally, which affects every doorway for every
+monster and the player, not just Thomas.
 
 You asked for more roster ideas: **Bluey, the Teletubbies (Tinky Winky),
 Cocomelon's JJ, and SpongeBob/Dora's Nickelodeon stablemate Baby Shark**
