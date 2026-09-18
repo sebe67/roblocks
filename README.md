@@ -102,10 +102,12 @@ in Workspace. A totally blank new place works fine.
   the moment that player goes `Hidden` (a wardrobe) — full stop; no third
   state, no "go check where I last saw them" detour, nothing else that can
   knock a monster out of one state into a muddled condition between the
-  two. A noise alert (a minigame station running, Dora's callout quirk)
-  never starts a real Chase either; it just gives Patrol a specific
-  destination to head toward for a while instead of a random one
-  (`ReceiveAlert`), so it's a variant of Patrol rather than its own state.
+  two. A noise alert (a minigame station running, Dora's callout quirk, or
+  **sprinting** — see below) never starts a real Chase either; it just
+  gives Patrol a specific destination to head toward for a while instead of
+  a random one (`ReceiveAlert`), so it's a variant of Patrol rather than
+  its own state. Every monster's `sightRange` is x1.75 its original value
+  per request.
   Mid-chase, a monster also re-scans every tick for a strictly closer,
   currently-visible, non-`Hidden` player than whoever it's already chasing
   (same sight rules as spotting one in the first place) and switches to
@@ -335,7 +337,7 @@ in Workspace. A totally blank new place works fine.
   stamina meter over `Config.Player.SprintDuration` (10s) of continuous
   use (`SprintController.lua`). Hit empty and you're forced to walk until
   it regenerates back up to `MinSprintFraction` — regen takes
-  `SprintRegenDuration` (20s) normally, `SprintRegenHiddenMultiplier` (2x)
+  `SprintRegenDuration` (12s) normally, `SprintRegenHiddenMultiplier` (2x)
   faster while hiding in a wardrobe. A thin bar at the bottom-center of the
   screen fades in whenever it's not full or you're holding Shift, and
   fades back out once it's topped off and you've let go — tracked entirely
@@ -344,6 +346,17 @@ in Workspace. A totally blank new place works fine.
   what actually keep it un-cheatable, not this meter. Added specifically
   so a chase isn't just "hold Shift forever" — see hiding spots below for
   the other half of that fix.
+- **Sprinting makes noise** (`MonsterAI.StartSprintNoiseLoop`/
+  `BroadcastSprintNoise`): the server polls every detectable player's
+  `Humanoid.WalkSpeed` every `Config.Player.SprintNoiseCheckInterval` (0.5s)
+  and, for anyone at `SprintSpeed`, alerts any monster within that
+  monster's own `hearingRadius` — a field that existed in `Config.Monsters`
+  since the very first pass but was never actually read by any code until
+  now. Same rule as any other noise alert: it only gives Patrol a
+  destination to turn and walk toward, never triggers Chase directly — so
+  sprinting past a monster's blind side makes it turn around, and it only
+  actually gives chase if that turn brings you into its sight range/FOV/an
+  unobstructed raycast, same as always.
 - **Hiding spots** (`HidingService.lua` + `HidingController.lua` +
   `MazeGenerator.lua`'s `buildHidingSpot`): on average
   `Config.Maze.HidingSpotChance` (~1-in-3) of rooms gets a wardrobe, built
@@ -371,16 +384,21 @@ in Workspace. A totally blank new place works fine.
   camp forever either: `Config.HidingSpot.MaxHideDuration` (12s) force-exits
   you, with a warning toast `KickWarningTime` (3s) beforehand.
 - **View bob** (`ViewBobController.lua`): a subtle first-person camera bob
-  while moving, scaled up a bit while sprinting — cycles per stud traveled
-  rather than per second, so it naturally speeds up with your actual speed
-  instead of needing a separate sprint-only multiplier. Applied as a
-  camera-local offset layered on top of Roblox's own camera update every
-  frame (`RunService:BindToRenderStep`, same "run after the built-in camera
+  while moving, scaled up while sprinting — cycles per stud traveled rather
+  than per second, so it naturally speeds up with your actual speed instead
+  of needing a separate sprint-only multiplier. Applied as a camera-local
+  offset layered on top of Roblox's own camera update every frame
+  (`RunService:BindToRenderStep`, same "run after the built-in camera
   script" approach `CursorLock.lua` uses for mouse state). The raw physics
   velocity it reads has small real per-frame noise (footstep impulses,
   floor contact) that read as a shaky jitter on top of the bob at sprint's
   bigger amplitude; smoothed with an exponential moving average, and tuned
-  down from ~7Hz to a real footstep cadence (~1.5-2.4Hz).
+  down from ~7Hz to a real footstep cadence (~1.5-2.4Hz). Sprint amplitude
+  also grows further as stamina runs low (`LOW_STAMINA_SHAKE_BOOST`, up to
+  70% extra shake at empty) via a tiny shared `StaminaState.lua` value
+  `SprintController.lua` writes every frame and this reads — the two are
+  separate LocalScripts on the same client, so this is a plain shared Lua
+  table, not a remote/attribute.
 - **Flashlight**: press F to toggle (`FlashlightController.lua` sends the
   request; `PlayerService.lua` owns the actual light). It's a real
   server-owned `SpotLight` (`Config.Flashlight` for range/angle/
@@ -936,6 +954,7 @@ src/StarterPlayerScripts/
   UIUtil.lua                         Shared UI-building helpers
   CursorLock.lua                     Frees the mouse for clickable menus (fights the camera every frame)
   SprintController.lua               Shift-to-sprint with a drain/regen stamina meter + fade in/out bar
+  StaminaState.lua                    Tiny shared stamina value read by ViewBobController.lua's low-stamina shake boost
   ViewBobController.lua               Subtle first-person camera bob, scaled up while sprinting
   FlashlightController.lua            Sends the F-key toggle request + throttled camera-pitch reports for beam tilt
   NoclipController.lua                Drives free-fly movement for /spectate (server only toggles the "Flying" state)

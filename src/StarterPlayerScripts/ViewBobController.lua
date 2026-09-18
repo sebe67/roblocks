@@ -7,6 +7,7 @@
 
 local RunService = game:GetService("RunService")
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
+local StaminaState = require(script.Parent.StaminaState)
 
 local ViewBobController = {}
 
@@ -18,9 +19,15 @@ local ViewBobController = {}
 -- rather than a bob.
 local CYCLES_PER_STUD = 0.095
 local WALK_AMPLITUDE = 0.05
-local SPRINT_AMPLITUDE = 0.12 -- was 0.09, bumped up slightly per request
+local SPRINT_AMPLITUDE = 0.15 -- was 0.09, then 0.12, bumped up again per request
 local SWAY_RATIO = 0.5 -- horizontal sway relative to vertical bob, half frequency (figure-8)
 local SPEED_SMOOTHING = 12 -- higher = snaps to actual speed faster, lower = smoother but laggier
+-- Extra shake on top of the normal sprint amplitude as stamina (see
+-- SprintController.lua/StaminaState.lua) runs out -- 0.7 means running on
+-- empty shakes the camera 70% harder than a fresh sprint, fading to 0 extra
+-- at full stamina. Scaled by sprintT below so it only kicks in while
+-- actually sprinting, not at a walk.
+local LOW_STAMINA_SHAKE_BOOST = 0.7
 
 function ViewBobController.Init(context)
 	local player = context.player
@@ -58,7 +65,9 @@ function ViewBobController.Init(context)
 			0,
 			1
 		)
-		local amplitude = (WALK_AMPLITUDE + (SPRINT_AMPLITUDE - WALK_AMPLITUDE) * sprintT) * moveRatio
+		local staminaDepletion = 1 - StaminaState.Fraction -- 0 = full, 1 = empty
+		local staminaBoost = 1 + staminaDepletion * LOW_STAMINA_SHAKE_BOOST * sprintT
+		local amplitude = (WALK_AMPLITUDE + (SPRINT_AMPLITUDE - WALK_AMPLITUDE) * sprintT) * moveRatio * staminaBoost
 
 		local bobY = math.sin(phase) * amplitude
 		local bobX = math.cos(phase * 0.5) * amplitude * SWAY_RATIO

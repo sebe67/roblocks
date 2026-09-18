@@ -46,6 +46,7 @@ local maze = MazeGenerator.Generate()
 StoreTheme.Apply()
 StoreTheme.StartFlicker(maze.model)
 StoreTheme.StartBlackoutLoop(maze)
+MonsterAI.StartSprintNoiseLoop()
 
 local monsters = MonsterSpawner.SpawnAll(maze)
 for _, monster in ipairs(monsters) do

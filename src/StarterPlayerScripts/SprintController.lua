@@ -16,6 +16,7 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local UIUtil = require(script.Parent.UIUtil)
+local StaminaState = require(script.Parent.StaminaState)
 
 local SprintController = {}
 
@@ -125,6 +126,7 @@ function SprintController.Init(context)
 		end
 
 		applySpeed()
+		StaminaState.Fraction = stamina
 
 		local targetAlpha = (stamina < 0.999 or holdingShift) and 0 or 1
 		barAlpha += (targetAlpha - barAlpha) * math.min(1, dt * 6)

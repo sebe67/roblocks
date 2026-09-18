@@ -129,6 +129,9 @@ Config.Player = {
 	SprintRegenDuration = 12, -- was 20; recharges noticeably faster per request
 	SprintRegenHiddenMultiplier = 2,
 	MinSprintFraction = 0.15, -- stops instant flicker at the empty edge
+	-- How often the server checks each player's WalkSpeed to see if
+	-- they're currently sprinting, for MonsterAI.StartSprintNoiseLoop.
+	SprintNoiseCheckInterval = 0.5,
 }
 
 -- A wardrobe/closet prop MazeGenerator places against a room's real solid
@@ -246,6 +249,12 @@ Config.Overtime = {
 --                       -- a bigger value makes narrow doorways impassable
 --                       to that monster's pathfinding, forcing it through
 --                       hallway-width gaps and open rooms only (Thomas).
+--   hearingRadius      studs within which this monster hears a sprinting
+--                       player and turns to investigate their position
+--                       (MonsterAI.BroadcastSprintNoise/ReceiveAlert) --
+--                       same "noise gives Patrol a destination, never
+--                       triggers Chase directly" rule as any other alert;
+--                       it still has to actually see you to give chase.
 Config.Monsters = {
 	{
 		id = "George",
@@ -256,7 +265,7 @@ Config.Monsters = {
 		patrolSpeed = 14,
 		chaseSpeed = 24,
 		investigateSpeed = 17,
-		sightRange = 46,
+		sightRange = 81, -- was 46; x1.75 per request
 		sightAngle = 65,
 		hearingRadius = 20,
 		loseSightTime = 4,
@@ -286,7 +295,7 @@ Config.Monsters = {
 		patrolSpeed = 12,
 		chaseSpeed = 20,
 		investigateSpeed = 15,
-		sightRange = 40,
+		sightRange = 70, -- was 40; x1.75 per request
 		sightAngle = 70,
 		hearingRadius = 18,
 		loseSightTime = 3.5,
@@ -326,7 +335,7 @@ Config.Monsters = {
 		patrolSpeed = 16,
 		chaseSpeed = 32,
 		investigateSpeed = 20,
-		sightRange = 55,
+		sightRange = 96, -- was 55; x1.75 per request
 		sightAngle = 50,
 		hearingRadius = 26,
 		loseSightTime = 5,
@@ -352,7 +361,7 @@ Config.Monsters = {
 		patrolSpeed = 10,
 		chaseSpeed = 17,
 		investigateSpeed = 12,
-		sightRange = 35,
+		sightRange = 61, -- was 35; x1.75 per request
 		sightAngle = 80,
 		hearingRadius = 30,
 		loseSightTime = 5,
@@ -377,7 +386,7 @@ Config.Monsters = {
 		patrolSpeed = 15,
 		chaseSpeed = 23,
 		investigateSpeed = 17,
-		sightRange = 42,
+		sightRange = 74, -- was 42; x1.75 per request
 		sightAngle = 65,
 		hearingRadius = 20,
 		loseSightTime = 4,
@@ -402,7 +411,7 @@ Config.Monsters = {
 		patrolSpeed = 13,
 		chaseSpeed = 21,
 		investigateSpeed = 16,
-		sightRange = 38,
+		sightRange = 67, -- was 38; x1.75 per request
 		sightAngle = 65,
 		hearingRadius = 19,
 		loseSightTime = 4,
@@ -427,7 +436,7 @@ Config.Monsters = {
 		patrolSpeed = 13,
 		chaseSpeed = 19,
 		investigateSpeed = 14,
-		sightRange = 36,
+		sightRange = 63, -- was 36; x1.75 per request
 		sightAngle = 75,
 		hearingRadius = 22,
 		loseSightTime = 3.5,
@@ -452,7 +461,7 @@ Config.Monsters = {
 		patrolSpeed = 13,
 		chaseSpeed = 20,
 		investigateSpeed = 15,
-		sightRange = 40,
+		sightRange = 70, -- was 40; x1.75 per request
 		sightAngle = 70,
 		hearingRadius = 20,
 		loseSightTime = 4,
@@ -477,7 +486,7 @@ Config.Monsters = {
 		patrolSpeed = 11,
 		chaseSpeed = 22,
 		investigateSpeed = 14,
-		sightRange = 38,
+		sightRange = 67, -- was 38; x1.75 per request
 		sightAngle = 70,
 		hearingRadius = 28,
 		loseSightTime = 4,

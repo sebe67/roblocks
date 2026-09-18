@@ -724,6 +724,50 @@ function MonsterAI.BroadcastCallout(position, excludeMonster)
 	end
 end
 
+-- Sprinting is loud: unlike BroadcastNoise's single shared radius (a
+-- minigame station, a ground-pound thud), each monster hears it at its own
+-- def.hearingRadius -- previously a dead, unused field left over from
+-- before the Patrol/Chase restructuring, now finally read here. Still just
+-- an alert, not a sight check: a monster this close turns to walk toward
+-- you (see ReceiveAlert), and only actually enters Chase if that turn
+-- brings you into its FOV/range/raycast -- exactly how "sprint past a
+-- monster's blind side and it turns to spot you" should work without
+-- teleporting knowledge of your position into it.
+function MonsterAI.BroadcastSprintNoise(position)
+	for _, monster in ipairs(registry) do
+		if not monster.paused and not monster.destroyed then
+			local radius = monster.def.hearingRadius or 20
+			local d = (monster.root.Position - position).Magnitude
+			if d <= radius then
+				monster:ReceiveAlert(position)
+			end
+		end
+	end
+end
+
+-- Polls every currently-detectable player's WalkSpeed (client-set by
+-- SprintController.lua, replicated like any other Humanoid property) and
+-- broadcasts sprint noise for anyone at/near SprintSpeed. Reuses
+-- playersToCheck() so this respects exactly the same population sight
+-- checks already do (Alive, not Invulnerable, not Hidden) -- a shielded
+-- respawn or a player tucked in a wardrobe shouldn't give away their
+-- position by "sprinting" either. Call once at server boot; safe to leave
+-- running always, since paused monsters and non-Alive players both no-op
+-- out on their own (same as StoreTheme's blackout/flicker loops).
+function MonsterAI.StartSprintNoiseLoop()
+	task.spawn(function()
+		while true do
+			task.wait(Config.Player.SprintNoiseCheckInterval)
+			for _, entry in ipairs(playersToCheck()) do
+				local humanoid = entry.player.Character and entry.player.Character:FindFirstChildOfClass("Humanoid")
+				if humanoid and humanoid.WalkSpeed >= Config.Player.SprintSpeed - 0.5 then
+					MonsterAI.BroadcastSprintNoise(entry.root.Position)
+				end
+			end
+		end
+	end)
+end
+
 -- waypointSpacing defaults to 16 (Patrol's value) when omitted -- the
 -- EXPERIMENTAL Chase obstacle-awareness path (_pathToChase) passes
 -- CHASE_WAYPOINT_SPACING (8) instead; Patrol's own calls (_pathTo) are
