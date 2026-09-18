@@ -18,7 +18,17 @@ Config.Maze = {
 	MinRoomSize = 3, -- rooms are 3-5 base cells per side (66-110 studs) -- big open spaces, not a mini-maze
 	MaxRoomSize = 5,
 	LoopChance = 0.15, -- chance an extra room-to-room connection is added beyond the minimum spanning layout
-	HallwayChance = 0.4, -- of any room-to-room connection, the odds it's a wide open gap instead of a narrow doorway
+	-- Of any room-to-room connection, the odds it's a wide open gap
+	-- instead of a narrow doorway -- hallways are the only inter-room
+	-- connection Thomas's oversized pathAgentRadius can reliably route
+	-- through (a standard doorway is only marginally wider than his own
+	-- clearance requirement, and PathfindingService's navmesh generation
+	-- is more conservative than the raw "corridor width > 2x radius" math
+	-- suggests, so routes needing several chained doorways across the map
+	-- fail often enough that he was standing still a lot). 0.4 -> 0.6 per
+	-- request, giving him more usable connections without turning every
+	-- doorway into a hallway.
+	HallwayChance = 0.6,
 	DoorwayWidth = 6, -- narrow connections are this wide instead of the full room edge
 	MonsterSpawnExclusionCells = 4, -- monsters won't spawn/reposition within this many cells of the entrance at round start
 	-- Rolled once per room (see MazeGenerator's placement pass): on average

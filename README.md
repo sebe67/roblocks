@@ -74,8 +74,13 @@ in Workspace. A totally blank new place works fine.
   center of the grid — the intersection point of all four color zones —
   rather than a corner, and the room-graph spanning walk starts from there
   too, so connectivity radiates outward from where the round actually
-  begins. `HallwayChance` (0.4) governs how often a room-to-room connector
-  is a wide open hallway gap instead of a narrow doorway.
+  begins. `HallwayChance` (0.4 → 0.6) governs how often a room-to-room
+  connector is a wide open hallway gap instead of a narrow doorway —
+  bumped up since a hallway is the only connection type Thomas's oversized
+  `pathAgentRadius` can reliably route through; a standard doorway is only
+  marginally wider than his own clearance, and a route needing several
+  chained doorways across the map failed often enough that he was
+  standing still a lot.
   Plus IKEA-blue/yellow shelf units, fake-Swedish aisle signage
   (`GRÖNKVIST`, `MÖRKHUS`, ...), a lobby/entrance, a locked "loading dock"
   exit, and six minigame rooms.
