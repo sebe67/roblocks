@@ -587,6 +587,18 @@ function MonsterAI:_hasClearLine(targetRoot)
 	return not self:_rayBlocked(targetRoot, targetRoot.Position - self.root.Position)
 end
 
+-- Same idea as _hasClearLine, but for a bare Vector3 (an alert/noise
+-- position, not a player's own root part) -- used by investigate movement
+-- below. No target body to exclude from the raycast since there isn't a
+-- real target instance, so this is a plain "does anything real block this
+-- line" check.
+function MonsterAI:_hasClearLineToPoint(point)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = self.raycastExclude
+	return workspace:Raycast(self.root.Position, point - self.root.Position, params) == nil
+end
+
 function MonsterAI:_inDarkCell()
 	local cellSize = self.maze.cellSize
 	local x = math.clamp(math.floor(self.root.Position.X / cellSize) + 1, 1, self.maze.gridWidth)
@@ -702,6 +714,12 @@ function MonsterAI:ReceiveAlert(position)
 	end
 	self.investigatePos = position
 	self.investigateUntil = os.clock() + 6
+	-- Force an immediate re-evaluation (beeline check first) toward the new
+	-- position instead of continuing whatever investigate route was mid-
+	-- flight toward the previous one -- see the Patrol branch of Update()
+	-- for why investigate movement uses these Chase fields, not Patrol's
+	-- own currentPath/_ensurePath.
+	self.chaseCurrentPath = nil
 	self.currentPath = nil
 end
 
@@ -745,22 +763,37 @@ function MonsterAI.BroadcastSprintNoise(position)
 	end
 end
 
--- Polls every currently-detectable player's WalkSpeed (client-set by
--- SprintController.lua, replicated like any other Humanoid property) and
--- broadcasts sprint noise for anyone at/near SprintSpeed. Reuses
--- playersToCheck() so this respects exactly the same population sight
--- checks already do (Alive, not Invulnerable, not Hidden) -- a shielded
--- respawn or a player tucked in a wardrobe shouldn't give away their
--- position by "sprinting" either. Call once at server boot; safe to leave
--- running always, since paused monsters and non-Alive players both no-op
--- out on their own (same as StoreTheme's blackout/flicker loops).
+-- Polls every currently-detectable player's actual ground speed and
+-- broadcasts sprint noise for anyone moving at/near SprintSpeed.
+--
+-- Deliberately does NOT read Humanoid.WalkSpeed: that property is set by
+-- SprintController.lua from a LocalScript, and a client changing a
+-- property on an Instance only ever affects what that one client sees --
+-- it does not replicate back to the server (or to other clients), so the
+-- server's own copy of WalkSpeed just sits at whatever value PlayerService
+-- last set it to server-side and never reflects the client's sprint
+-- override at all. This is exactly why sprint noise wasn't firing
+-- reliably. What DOES genuinely replicate to the server is the actual
+-- physics: the local player's character has network ownership of its own
+-- HumanoidRootPart, so AssemblyLinearVelocity correctly reflects real
+-- movement speed -- same technique ViewBobController.lua already uses
+-- client-side for its own speed-based amplitude.
+--
+-- Reuses playersToCheck() so this respects exactly the same population
+-- sight checks already do (Alive, not Invulnerable, not Hidden) -- a
+-- shielded respawn or a player tucked in a wardrobe shouldn't give away
+-- their position by "sprinting" either. Call once at server boot; safe to
+-- leave running always, since paused monsters and non-Alive players both
+-- no-op out on their own (same as StoreTheme's blackout/flicker loops).
+local SPRINT_NOISE_SPEED_MARGIN = 2 -- studs/sec of slack below SprintSpeed, for physics/network jitter
 function MonsterAI.StartSprintNoiseLoop()
 	task.spawn(function()
 		while true do
 			task.wait(Config.Player.SprintNoiseCheckInterval)
 			for _, entry in ipairs(playersToCheck()) do
-				local humanoid = entry.player.Character and entry.player.Character:FindFirstChildOfClass("Humanoid")
-				if humanoid and humanoid.WalkSpeed >= Config.Player.SprintSpeed - 0.5 then
+				local velocity = entry.root.AssemblyLinearVelocity
+				local speed = Vector2.new(velocity.X, velocity.Z).Magnitude
+				if speed >= Config.Player.SprintSpeed - SPRINT_NOISE_SPEED_MARGIN then
 					MonsterAI.BroadcastSprintNoise(entry.root.Position)
 				end
 			end
@@ -1262,28 +1295,61 @@ function MonsterAI:Update(dt)
 	end
 
 	-- Patrol (the only other state). A noise alert (ReceiveAlert -- a
-	-- minigame station running, Dora's callout) just swaps in a specific
-	-- destination here for a while instead of a random one; it never
-	-- becomes a different state.
-	local destination
+	-- minigame station running, Dora's callout, a sprinting player) just
+	-- swaps in a specific destination here for a while instead of a random
+	-- one; it never becomes a different state.
+	--
+	-- An active investigate destination deliberately does NOT go through
+	-- the random-wander path below (_ensurePath/_followCurrentPath): that
+	-- system only ever repaths once currentPath is fully empty, plus a
+	-- 1-second retry throttle -- both tuned for "occasionally retry an
+	-- unreachable random cell," not for reacting to something that can
+	-- update every half-second (a sprinting player). Those two limits
+	-- combined could leave a freshly-alerted monster simply standing still
+	-- for up to a second at a time instead of visibly reacting -- which is
+	-- exactly what "the sprint noise doesn't seem to work well" turned out
+	-- to be. Investigate instead reuses Chase's beeline-or-pathfind
+	-- machinery (_hasClearLineToPoint/_ensureChasePath/_followChasePath,
+	-- 0.5s replan) -- safe to share since Patrol/investigate and Chase are
+	-- never active at the same time, same reasoning godmode's reuse of
+	-- these same fields already relies on.
 	if self.investigatePos and now < (self.investigateUntil or 0) then
-		destination = self.investigatePos
+		local reachedEnd
+		if self:_hasClearLineToPoint(self.investigatePos) then
+			-- Arrived (within the same 3-stud "close enough" every other
+			-- waypoint/destination check in this file uses) -- stop
+			-- investigating rather than idling at the noise's last known
+			-- spot for the rest of the 6-second window.
+			if (self.investigatePos - self.root.Position).Magnitude < 3 then
+				reachedEnd = true
+			else
+				self.chaseCurrentPath = nil
+				self:_faceAndMove(dt, self.investigatePos - self.root.Position, def.patrolSpeed, true, true)
+			end
+		else
+			self:_ensureChasePath(self.investigatePos)
+			reachedEnd = self:_followChasePath(dt, def.patrolSpeed)
+		end
+		if reachedEnd then
+			self.investigatePos = nil
+			self.chaseCurrentPath = nil
+		end
 	else
 		self.investigatePos = nil
-		destination = self:_randomPatrolTarget()
-	end
-	self:_ensurePath(destination)
-	-- If PathfindingService couldn't find a route (bad luck on the random
-	-- cell, or a genuinely unreachable one), currentPath is empty and
-	-- _followCurrentPath returns true immediately without calling
-	-- _faceAndMove at all -- the monster just doesn't move this frame
-	-- rather than facing/walking into nothing, and _ensurePath's 1-second
-	-- retry throttle tries a fresh destination shortly after. This is the
-	-- "they don't always have to be moving forward" case.
-	local reachedEnd = self:_followCurrentPath(dt, def.patrolSpeed)
-	if reachedEnd then
-		self.currentPath = nil
-		self.investigatePos = nil
+		local destination = self:_randomPatrolTarget()
+		self:_ensurePath(destination)
+		-- If PathfindingService couldn't find a route (bad luck on the
+		-- random cell, or a genuinely unreachable one), currentPath is
+		-- empty and _followCurrentPath returns true immediately without
+		-- calling _faceAndMove at all -- the monster just doesn't move
+		-- this frame rather than facing/walking into nothing, and
+		-- _ensurePath's 1-second retry throttle tries a fresh destination
+		-- shortly after. This is the "they don't always have to be moving
+		-- forward" case.
+		local reachedEnd = self:_followCurrentPath(dt, def.patrolSpeed)
+		if reachedEnd then
+			self.currentPath = nil
+		end
 	end
 
 	-- Occasional audio tell (SpongeBob's giggle, George's chatter, etc).

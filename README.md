@@ -348,15 +348,25 @@ in Workspace. A totally blank new place works fine.
   the other half of that fix.
 - **Sprinting makes noise** (`MonsterAI.StartSprintNoiseLoop`/
   `BroadcastSprintNoise`): the server polls every detectable player's
-  `Humanoid.WalkSpeed` every `Config.Player.SprintNoiseCheckInterval` (0.5s)
-  and, for anyone at `SprintSpeed`, alerts any monster within that
-  monster's own `hearingRadius` — a field that existed in `Config.Monsters`
-  since the very first pass but was never actually read by any code until
-  now. Same rule as any other noise alert: it only gives Patrol a
-  destination to turn and walk toward, never triggers Chase directly — so
-  sprinting past a monster's blind side makes it turn around, and it only
-  actually gives chase if that turn brings you into its sight range/FOV/an
-  unobstructed raycast, same as always.
+  actual ground speed (`HumanoidRootPart.AssemblyLinearVelocity`, not
+  `Humanoid.WalkSpeed` — a client-set `WalkSpeed` override never actually
+  replicates back to the server, only the resulting real movement does,
+  which is why this didn't work reliably at first) every
+  `Config.Player.SprintNoiseCheckInterval` (0.5s) and, for anyone at
+  `SprintSpeed`, alerts any monster within that monster's own
+  `hearingRadius` — a field that existed in `Config.Monsters` since the
+  very first pass but was never actually read by any code until now. Same
+  rule as any other noise alert: it only gives Patrol a destination to
+  turn and walk toward, never triggers Chase directly — so sprinting past
+  a monster's blind side makes it turn around, and it only actually gives
+  chase if that turn brings you into its sight range/FOV/an unobstructed
+  raycast, same as always. An active investigate destination bypasses
+  Patrol's own random-wander pathing (which only ever repaths once its
+  current route is fully empty, plus a 1-second retry throttle — both far
+  too sluggish for a destination that updates every half-second) and
+  instead reuses Chase's beeline-or-pathfind machinery (0.5s replan) —
+  safe to share since Patrol/investigate and Chase never run at the same
+  time.
 - **Hiding spots** (`HidingService.lua` + `HidingController.lua` +
   `MazeGenerator.lua`'s `buildHidingSpot`): on average
   `Config.Maze.HidingSpotChance` (~1-in-3) of rooms gets a wardrobe, built
