@@ -90,7 +90,14 @@ in Workspace. A totally blank new place works fine.
   `Working` attribute together, so a scripted toggle reads identically to a
   naturally-dead fixture everywhere else that attribute matters (the
   Grinch's darkBoost quirk). Try it live with `/light <x> <y> <on|off>` in
-  chat.
+  chat. The only real light sources in the store are these ceiling fixtures
+  and a player's own flashlight — the minigame stations' floor accent decal
+  used to be `Enum.Material.Neon`, which (unlike a merely bright color)
+  actually contributes ambient/bounce light in Roblox, and being sized
+  almost the full station cell right up against the walls, was quietly
+  lighting up nearby walls near every station ("walls that just glow in
+  some areas"). It's `SmoothPlastic` now — same bright cyan look, no longer
+  a stray light source.
 - **9 monsters**, each with its own stat block and one mechanical quirk, all
   tuned in `ReplicatedStorage/Shared/Config.lua` (see below).
 - **Sight-based AI** (`MonsterAI.lua`): exactly two states, **Patrol** and

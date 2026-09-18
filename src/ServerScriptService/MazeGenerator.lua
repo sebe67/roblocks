@@ -864,7 +864,14 @@ function MazeGenerator.Generate()
 			accent.CanQuery = false
 			accent.Size = Vector3.new(cellSize - 1, 0.15, cellSize - 1)
 			accent.CFrame = CFrame.new(center + Vector3.new(0, 0.1, 0))
-			accent.Material = Enum.Material.Neon
+			-- SmoothPlastic, not Neon: this panel spans almost the entire
+			-- cell right up against the surrounding walls, and Neon parts
+			-- actually contribute real ambient/bounce light in Roblox's
+			-- lighting technology, not just a flat self-lit look -- which
+			-- was quietly lighting up nearby walls near every station, the
+			-- "walls that just glow in some areas" report. The only real
+			-- light sources should be roof fixtures and player flashlights.
+			accent.Material = Enum.Material.SmoothPlastic
 			accent.Color = Color3.fromRGB(80, 220, 220)
 			accent.Parent = anchor
 
