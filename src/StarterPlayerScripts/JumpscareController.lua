@@ -39,10 +39,9 @@
 -- art replaces this.
 
 local RunService = game:GetService("RunService")
-local ContentProvider = game:GetService("ContentProvider")
+local SoundService = game:GetService("SoundService")
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local Net = require(game:GetService("ReplicatedStorage").Shared.Net)
-local SoundKit = require(game:GetService("ReplicatedStorage").Shared.SoundKit)
 local UIUtil = require(script.Parent.UIUtil)
 
 local JumpscareController = {}
@@ -100,39 +99,61 @@ local function getFocalPoint(model)
 	return CFrame.new(), 4
 end
 
--- A Sound's first Play() has to actually fetch/decode the asset, which
--- takes a variable, sometimes-not-trivial amount of time the very first
--- time -- while the screen going black/the viewport rendering is instant
--- (no asset fetch involved), so the scream could lag behind the death
--- screen by an inconsistent amount depending on whether this was the
--- first time that asset had ever been played on this client. Preloading
--- every jumpscare-related sound once at startup means it's already
--- cached in memory long before any real catch happens, so Play() actually
--- starts audio near-instantly every time instead of just the 2nd+ time.
-local function preloadJumpscareSounds()
-	local ids = { Config.Sounds.Caught, Config.Sounds.JumpscareScream }
+-- A brand-new Sound instance's first Play() call has to actually fetch and
+-- decode the asset before any audio comes out -- a variable, sometimes
+-- not-trivial delay -- while the screen going black is instant (no asset
+-- fetch involved), so the scream could lag behind the death screen by an
+-- inconsistent amount. A prior attempt fixed this with
+-- ContentProvider:PreloadAsync(idStrings), but that API's documented input
+-- is an array of INSTANCES (things like ImageLabels/Decals/Sounds whose
+-- properties reference content) -- passing it raw "rbxassetid://..."
+-- strings may just silently no-op, which would explain the delay
+-- persisting. This instead creates real, persistent Sound instances for
+-- every jumpscare-related id up front (SoundId assignment on a live
+-- instance is what actually kicks off the client's asset fetch) and reuses
+-- those exact same instances for every future catch -- by the time a real
+-- catch happens, they've had seconds (usually the whole intermission) to
+-- finish loading, so :Play() actually starts audio immediately instead of
+-- only doing so from the 2nd+ play of a given asset.
+local persistentSounds = {}
+
+local function getPersistentSound(soundId)
+	if not soundId or soundId == "" then
+		return nil
+	end
+	local sound = persistentSounds[soundId]
+	if not sound then
+		sound = Instance.new("Sound")
+		sound.SoundId = soundId
+		sound.Parent = SoundService
+		persistentSounds[soundId] = sound
+	end
+	return sound
+end
+
+local function playPersistent(soundId, volume, pitch)
+	local sound = getPersistentSound(soundId)
+	if not sound then
+		return
+	end
+	sound.Volume = volume
+	sound.PlaybackSpeed = pitch
+	sound.TimePosition = 0
+	sound:Play()
+end
+
+local function warmUpJumpscareSounds()
+	getPersistentSound(Config.Sounds.Caught)
+	getPersistentSound(Config.Sounds.JumpscareScream)
 	for _, def in ipairs(Config.Monsters) do
 		if def.jumpscareSoundId ~= "" then
-			table.insert(ids, def.jumpscareSoundId)
+			getPersistentSound(def.jumpscareSoundId)
 		end
-	end
-	local filtered = {}
-	for _, id in ipairs(ids) do
-		if id and id ~= "" then
-			table.insert(filtered, id)
-		end
-	end
-	if #filtered > 0 then
-		pcall(function()
-			ContentProvider:PreloadAsync(filtered)
-		end)
 	end
 end
 
 function JumpscareController.Init(context)
-	-- Non-blocking: PreloadAsync can take a moment, and this must not delay
-	-- every other controller after this one in Main.client.lua's init loop.
-	task.spawn(preloadJumpscareSounds)
+	warmUpJumpscareSounds()
 
 	local gui = UIUtil.screenGui("JumpscareGui")
 	gui.Enabled = false
@@ -223,7 +244,7 @@ function JumpscareController.Init(context)
 		-- server's shared "Monsters" SoundGroup; PlaybackSpeed is the cheap
 		-- equivalent pitch-down for them specifically.
 		local pitch = overtimeActive and 0.7 or 1
-		SoundKit.PlayUI(Config.Sounds.Caught, { Volume = 0.8, PlaybackSpeed = pitch })
+		playPersistent(Config.Sounds.Caught, 0.8, pitch)
 		-- Falls back to the shared Config.Sounds.JumpscareScream when this
 		-- monster doesn't have its own jumpscareSoundId set -- currently
 		-- that's every monster, so this is "the one scream everyone uses"
@@ -231,7 +252,7 @@ function JumpscareController.Init(context)
 		-- moment as Caught -- was staggered 0.15s later, but that read as
 		-- a delay rather than a deliberate one-two beat.
 		local screamId = def.jumpscareSoundId ~= "" and def.jumpscareSoundId or Config.Sounds.JumpscareScream
-		SoundKit.PlayUI(screamId, { Volume = 1, PlaybackSpeed = pitch })
+		playPersistent(screamId, 1, pitch)
 
 		if not (monsterModel and monsterModel.Parent) then
 			-- Safety net: no live instance to clone (shouldn't normally

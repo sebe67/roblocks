@@ -157,6 +157,43 @@ function StoreTheme.ForceEndBlackout(maze)
 	end
 end
 
+-- Flickers a set of currently-lit fixtures for `duration` seconds -- a
+-- warning beat before the real cutout instead of snapping straight from
+-- lit to dark. Bails out early (mid-flicker) if the blackout it's warming
+-- up for gets force-ended (round over, etc.) -- checked via the
+-- `blackoutActive` upvalue, set true by the caller before this runs.
+local function preCutoutFlicker(fixtures, duration)
+	local lights = {}
+	for _, fixture in ipairs(fixtures) do
+		local light = fixture:FindFirstChildOfClass("PointLight")
+		-- Only flicker lights that are actually ON right now -- one already
+		-- dark because SpongeBob is standing under it stays exactly as dark
+		-- as his own quirk left it, and gets restored to that same state
+		-- (not forced back on) once the flicker phase ends.
+		if light and light.Enabled then
+			table.insert(lights, light)
+		end
+	end
+	if #lights == 0 then
+		task.wait(duration)
+		return
+	end
+	local elapsed = 0
+	while elapsed < duration and blackoutActive do
+		local step = math.random(6, 14) / 40
+		for _, light in ipairs(lights) do
+			if math.random() < 0.6 then
+				light.Enabled = not light.Enabled
+			end
+		end
+		task.wait(step)
+		elapsed += step
+	end
+	for _, light in ipairs(lights) do
+		light.Enabled = true
+	end
+end
+
 -- Kills every currently-lit fixture for Config.Blackout.Duration seconds,
 -- then restores exactly the ones it turned off (anything SpongeBob is also
 -- suppressing at that moment correctly stays dark -- see
@@ -169,15 +206,28 @@ function StoreTheme.TriggerBlackout(maze)
 	if not fixturesFolder then
 		return
 	end
-	blackoutActive = true
-	blackoutEvent:FireAllClients(true)
 
 	local affected = {}
 	for _, fixture in ipairs(fixturesFolder:GetChildren()) do
 		if fixture:GetAttribute("NaturallyOn") then
-			StoreTheme.SuppressFixture(fixture)
 			table.insert(affected, fixture)
 		end
+	end
+	if #affected == 0 then
+		return
+	end
+
+	blackoutActive = true
+	preCutoutFlicker(affected, Config.Blackout.PreFlickerDuration)
+	if not blackoutActive then
+		-- ForceEndBlackout fired mid-flicker -- nothing was ever actually
+		-- suppressed, so there's nothing left to do.
+		return
+	end
+
+	blackoutEvent:FireAllClients(true)
+	for _, fixture in ipairs(affected) do
+		StoreTheme.SuppressFixture(fixture)
 	end
 
 	task.wait(Config.Blackout.Duration)
@@ -208,24 +258,96 @@ function StoreTheme.StartBlackoutLoop(maze)
 end
 
 -- Randomly clicks a handful of "dead" fixtures on for a moment then off
--- again, sourced from Fixture parts tagged Flickering=true by MazeGenerator.
+-- again (an occasional single flicker, unpredictable across the whole
+-- map), PLUS a small number of permanently-flickering clusters -- a few
+-- nearby dead fixtures that flicker together continuously instead of
+-- returning to a steady off state, so at least a couple of spots read as
+-- "this whole corner's wiring is bad" rather than one solitary blinking
+-- bulb. Both draw from the same pool of Fixture parts tagged
+-- Flickering=true by MazeGenerator; a fixture claimed by a group is
+-- removed from the occasional-single pool so it's never double-booked.
 function StoreTheme.StartFlicker(storeModel)
 	local fixturesFolder = storeModel:FindFirstChild("Fixtures")
 	if not fixturesFolder then
 		return
 	end
 
-	local flickerFixtures = {}
+	local candidates = {}
 	for _, fixture in ipairs(fixturesFolder:GetChildren()) do
 		if fixture:GetAttribute("Flickering") then
 			local light = fixture:FindFirstChildOfClass("PointLight")
-			if light then
-				table.insert(flickerFixtures, light)
+			local xStr, yStr = fixture.Name:match("Fixture_(%d+)_(%d+)")
+			if light and xStr then
+				table.insert(candidates, { light = light, x = tonumber(xStr), y = tonumber(yStr) })
+			end
+		end
+	end
+	if #candidates == 0 then
+		return
+	end
+
+	local function runGroup(members)
+		task.spawn(function()
+			while true do
+				task.wait(math.random(2, 6) / 10)
+				if not blackoutActive then
+					for _, m in ipairs(members) do
+						if math.random() < 0.5 then
+							m.light.Enabled = not m.light.Enabled
+						end
+					end
+				end
+			end
+		end)
+	end
+
+	local claimed = {}
+	local minSize, maxSize = Config.Lighting.PermanentFlickerGroupSize[1], Config.Lighting.PermanentFlickerGroupSize[2]
+	local radius = Config.Lighting.PermanentFlickerGroupRadius
+	for _ = 1, Config.Lighting.PermanentFlickerGroups do
+		local pool = {}
+		for _, c in ipairs(candidates) do
+			if not claimed[c] then
+				table.insert(pool, c)
+			end
+		end
+		if #pool == 0 then
+			break
+		end
+
+		-- Seed the cluster, then greedily grab nearby unclaimed candidates
+		-- (within `radius` grid cells) to fill it out.
+		local seed = pool[math.random(1, #pool)]
+		local group = { seed }
+		claimed[seed] = true
+		for _, c in ipairs(pool) do
+			if #group >= maxSize then
+				break
+			end
+			if c ~= seed and math.abs(c.x - seed.x) <= radius and math.abs(c.y - seed.y) <= radius then
+				table.insert(group, c)
+				claimed[c] = true
+			end
+		end
+
+		if #group >= minSize then
+			runGroup(group)
+		else
+			-- Not enough nearby dead fixtures to make a real cluster here --
+			-- release the claim rather than leaving a lone flickerer.
+			for _, c in ipairs(group) do
+				claimed[c] = nil
 			end
 		end
 	end
 
-	if #flickerFixtures == 0 then
+	local singleLights = {}
+	for _, c in ipairs(candidates) do
+		if not claimed[c] then
+			table.insert(singleLights, c.light)
+		end
+	end
+	if #singleLights == 0 then
 		return
 	end
 
@@ -235,7 +357,7 @@ function StoreTheme.StartFlicker(storeModel)
 			-- Skip a flicker entirely during a blackout -- "the power's out"
 			-- shouldn't have dead fixtures spontaneously sparking to life.
 			if not blackoutActive then
-				local light = flickerFixtures[math.random(1, #flickerFixtures)]
+				local light = singleLights[math.random(1, #singleLights)]
 				light.Enabled = true
 				for _ = 1, math.random(2, 5) do
 					task.wait(math.random(1, 3) / 20)

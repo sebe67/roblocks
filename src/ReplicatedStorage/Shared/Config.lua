@@ -53,6 +53,15 @@ Config.Lighting = {
 	FixtureColor = Color3.fromRGB(255, 238, 200),
 	FixtureFrequency = 3, -- roughly 1 in N cells gets a working ceiling fixture; rest stay dim
 	DeadFixtureFlickerChance = 0.35,
+	-- A handful of dead-but-flicker-capable fixtures near each other get
+	-- grouped into a permanently, continuously flickering cluster instead
+	-- of just joining the occasional single-fixture flicker pool -- reads
+	-- as "this whole corner's wiring is bad" instead of one solitary blinky
+	-- bulb. GroupRadius is in grid cells (Chebyshev distance from the
+	-- group's seed fixture).
+	PermanentFlickerGroups = 3,
+	PermanentFlickerGroupSize = { 2, 4 },
+	PermanentFlickerGroupRadius = 2,
 }
 
 -- Random store-wide blackouts during an active round. Checked once every
@@ -64,13 +73,19 @@ Config.Blackout = {
 	AverageInterval = 120,
 	CheckInterval = 5,
 	Duration = 10,
+	-- The affected fixtures flicker (still individually toggling, not a
+	-- clean fade) for this long right before the actual cutout, instead of
+	-- snapping straight from lit to dark -- a warning beat rather than a
+	-- surprise.
+	PreFlickerDuration = 3,
 }
 
 -- SpongeBob's "lightsOut" quirk (MonsterAI): kills every working light
 -- within LightsOutRadius studs of him as he moves, and lets each one turn
--- back on this many seconds after he's no longer near it. Doubled from
--- 20 -- since this is a radius, the actual darkened area is 4x bigger.
-Config.LightsOutRadius = 40
+-- back on this many seconds after he's no longer near it. 40 -> 60 (1.5x)
+-- per request -- since this is a radius, the actual darkened area is 2.25x
+-- bigger.
+Config.LightsOutRadius = 60
 Config.LightsOutGrace = 15
 
 -- Within this many studs of a chase target, MonsterAI:_canSee skips the
@@ -128,6 +143,12 @@ Config.HidingSpot = {
 	Height = 8,
 	DoorGap = 1.6,
 	MaxActivationDistance = 8,
+	-- Can't camp in a wardrobe forever -- HidingService force-exits whoever's
+	-- inside once MaxHideDuration is up, warning them KickWarningTime
+	-- seconds beforehand so it doesn't feel like getting yanked out of
+	-- nowhere.
+	MaxHideDuration = 12,
+	KickWarningTime = 3,
 }
 
 -- /spectate and /back debug chat commands (Main.server.lua, PlayerService,

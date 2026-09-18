@@ -18,7 +18,7 @@ local ViewBobController = {}
 -- rather than a bob.
 local CYCLES_PER_STUD = 0.095
 local WALK_AMPLITUDE = 0.05
-local SPRINT_AMPLITUDE = 0.09
+local SPRINT_AMPLITUDE = 0.12 -- was 0.09, bumped up slightly per request
 local SWAY_RATIO = 0.5 -- horizontal sway relative to vertical bob, half frequency (figure-8)
 local SPEED_SMOOTHING = 12 -- higher = snaps to actual speed faster, lower = smoother but laggier
 

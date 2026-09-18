@@ -1148,6 +1148,31 @@ function MonsterAI:Update(dt)
 			if self:_canSee(root) then
 				self.lastSightTime = now
 			end
+
+			-- Retarget mid-chase to a strictly closer player we can
+			-- actually see right now -- same sight rules _scanForTargets
+			-- uses to enter Chase in the first place -- so a monster
+			-- already chasing someone far away doesn't tunnel-vision past
+			-- a second player who runs right in front of it.
+			local currentDist = (root.Position - self.root.Position).Magnitude
+			local closer, closerDist
+			for _, entry in ipairs(playersToCheck()) do
+				if entry.player.Character ~= self.target then
+					local d = (entry.root.Position - self.root.Position).Magnitude
+					if d < currentDist and (not closerDist or d < closerDist) and self:_canSee(entry.root) then
+						closer = entry
+						closerDist = d
+					end
+				end
+			end
+			if closer then
+				self.target = closer.player.Character
+				root = closer.root
+				hum = closer.player.Character:FindFirstChildOfClass("Humanoid")
+				self.lastSightTime = now
+				self.chaseCurrentPath = nil
+			end
+
 			if now - self.lastSightTime > CHASE_GIVEUP_TIME then
 				-- Haven't seen them in CHASE_GIVEUP_TIME -- give up and
 				-- resume Patrol. No "go check where I last saw them"

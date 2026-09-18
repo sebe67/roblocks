@@ -19,6 +19,7 @@ local CONTROLLERS = {
 	"NoclipController",
 	"AmbienceController",
 	"JumpscareController",
+	"HidingController",
 	"DeathController",
 	"MinigameController",
 	"HUDController",

@@ -20,6 +20,7 @@
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
+local Net = require(game:GetService("ReplicatedStorage").Shared.Net)
 
 local HidingService = {}
 HidingService.__index = HidingService
@@ -28,6 +29,8 @@ function HidingService.new()
 	local self = setmetatable({}, HidingService)
 	self.occupantSpot = {} -- player -> spot
 	self.returnCFrame = {} -- player -> CFrame to restore on exit
+	self.warningEvent = Net.GetEvent("HidingWarning")
+	self.kickedEvent = Net.GetEvent("HidingKicked")
 	self:_setupSpots()
 
 	Players.PlayerRemoving:Connect(function(player)
@@ -56,6 +59,7 @@ function HidingService:_setupSpots()
 				promptAnchor = promptAnchor,
 				prompt = prompt,
 				occupant = nil,
+				enterToken = 0,
 			}
 
 			prompt.Triggered:Connect(function(player)
@@ -91,6 +95,25 @@ function HidingService:_enter(player, spot)
 	humanoid.WalkSpeed = 0
 	player:SetAttribute("Hidden", true)
 	spot.prompt.ActionText = "Exit Closet"
+
+	-- Can't camp in here forever -- warn, then force out at
+	-- MaxHideDuration. enterToken distinguishes THIS occupancy from any
+	-- later one (a leave-then-re-enter of the same spot before this fires),
+	-- so a stale timer from a previous stay can never kick the wrong stay.
+	spot.enterToken += 1
+	local token = spot.enterToken
+	local warnIn = Config.HidingSpot.MaxHideDuration - Config.HidingSpot.KickWarningTime
+	task.delay(warnIn, function()
+		if spot.occupant == player and spot.enterToken == token then
+			self.warningEvent:FireClient(player, Config.HidingSpot.KickWarningTime)
+		end
+	end)
+	task.delay(Config.HidingSpot.MaxHideDuration, function()
+		if spot.occupant == player and spot.enterToken == token then
+			self:_exit(player, spot)
+			self.kickedEvent:FireClient(player)
+		end
+	end)
 end
 
 function HidingService:_exit(player, spot)

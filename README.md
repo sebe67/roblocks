@@ -98,13 +98,19 @@ in Workspace. A totally blank new place works fine.
   entered *only* by directly seeing a player (distance + field-of-view cone
   + an unobstructed raycast — never by teleporting knowledge of your
   position into a monster) and exited *only* when `CHASE_GIVEUP_TIME` (5s)
-  passes with no sight of that player, full stop — no third state, no
-  "go check where I last saw them" detour, nothing else that can knock a
-  monster out of one state into a muddled condition between the two. A
-  noise alert (a minigame station running, Dora's callout quirk) never
-  starts a real Chase either; it just gives Patrol a specific destination
-  to head toward for a while instead of a random one (`ReceiveAlert`), so
-  it's a variant of Patrol rather than its own state.
+  passes with no sight of that player — **or instantly**, no grace period,
+  the moment that player goes `Hidden` (a wardrobe) — full stop; no third
+  state, no "go check where I last saw them" detour, nothing else that can
+  knock a monster out of one state into a muddled condition between the
+  two. A noise alert (a minigame station running, Dora's callout quirk)
+  never starts a real Chase either; it just gives Patrol a specific
+  destination to head toward for a while instead of a random one
+  (`ReceiveAlert`), so it's a variant of Patrol rather than its own state.
+  Mid-chase, a monster also re-scans every tick for a strictly closer,
+  currently-visible, non-`Hidden` player than whoever it's already chasing
+  (same sight rules as spotting one in the first place) and switches to
+  them if found — so it doesn't tunnel-vision past someone who runs right
+  in front of it.
 
   **Movement itself is now fully kinematic — no Humanoid physics, no
   momentum, at all.** Every monster's `HumanoidRootPart` is `Anchored`
@@ -338,21 +344,32 @@ in Workspace. A totally blank new place works fine.
   what actually keep it un-cheatable, not this meter. Added specifically
   so a chase isn't just "hold Shift forever" — see hiding spots below for
   the other half of that fix.
-- **Hiding spots** (`HidingService.lua` + `MazeGenerator.lua`'s
-  `buildHidingSpot`): on average `Config.Maze.HidingSpotChance` (~1-in-3)
-  of rooms gets a wardrobe, built flush against one of that room's real
-  solid walls (never a doorway/hallway gap, never the exit-door wall). **E**
-  both enters and leaves — a single shared `ProximityPrompt` per wardrobe
-  toggles whoever's using it (a second player can't also pile into an
-  occupied one). While hidden: `humanoid.WalkSpeed = 0` (same freeze
+- **Hiding spots** (`HidingService.lua` + `HidingController.lua` +
+  `MazeGenerator.lua`'s `buildHidingSpot`): on average
+  `Config.Maze.HidingSpotChance` (~1-in-3) of rooms gets a wardrobe, built
+  flush against one of that room's real solid walls (never a
+  doorway/hallway gap, never the exit-door wall). **E** both enters and
+  leaves — a single shared `ProximityPrompt` per wardrobe toggles whoever's
+  using it (a second player can't also pile into an occupied one), and its
+  `ActionText` flips between "Enter Closet"/"Exit Closet" with that spot's
+  own occupancy. While hidden: `humanoid.WalkSpeed = 0` (same freeze
   pattern `PlayerService:CatchPlayer` uses) and `player:GetAttribute
   ("Hidden")` is set, which `MonsterAI.lua`'s `playersToCheck()` filters
-  out before any sight/catch check runs — hidden means genuinely invisible
-  to every monster, not just harder to spot. The wardrobe's own door has a
-  literal `Config.HidingSpot.DoorGap` between its two leaves — since the
-  round locks the camera to first-person at the character's head
-  (`SpectateController.lua`), standing at the interior anchor and facing
-  that gap shows a real sliver of the room with zero extra camera code.
+  out before any sight/catch check runs *and* which its Chase branch checks
+  every tick to instantly drop that player as a target — hidden means
+  genuinely invisible and untouchable, not just harder to spot, and a
+  monster can't wander into the wardrobe chasing a position that no longer
+  exists for it. The wardrobe's own door has a literal
+  `Config.HidingSpot.DoorGap` between its two leaves — since the round
+  locks the camera to first-person at the character's head, standing at
+  the interior anchor and facing that gap shows a real sliver of the room;
+  the character's server-set facing alone doesn't change what you actually
+  see through, though, since Roblox's built-in first-person camera script
+  tracks its own independent look angle — `HidingController.lua` forces a
+  camera resync (`CameraType` `Scriptable` → `Custom`) the instant you go
+  `Hidden` so you land facing the gap instead of the back wall. You can't
+  camp forever either: `Config.HidingSpot.MaxHideDuration` (12s) force-exits
+  you, with a warning toast `KickWarningTime` (3s) beforehand.
 - **View bob** (`ViewBobController.lua`): a subtle first-person camera bob
   while moving, scaled up a bit while sprinting — cycles per stud traveled
   rather than per second, so it naturally speeds up with your actual speed
@@ -467,13 +484,26 @@ in Workspace. A totally blank new place works fine.
   with odds of `CheckInterval / Config.Blackout.AverageInterval` each time —
   a Poisson-style process, so it averages one blackout every
   `Config.Blackout.AverageInterval` (2 minutes) with no fixed guarantee
-  either way, per your call. Fires a `BlackoutEvent` to clients for a
-  banner/screen-dip/sting, and is fully suspended outside of an active
-  Playing round (and force-ends immediately if the round ends mid-blackout).
-  SpongeBob's quirk above uses the same underlying suppression system
+  either way, per your call. The affected fixtures flicker for
+  `Config.Blackout.PreFlickerDuration` (3s) before actually cutting out —
+  a warning beat instead of a surprise snap to dark — then fires a
+  `BlackoutEvent` to clients for a banner/screen-dip/sting, and is fully
+  suspended outside of an active Playing round (and force-ends immediately,
+  flicker included, if the round ends mid-blackout). SpongeBob's quirk
+  above uses the same underlying suppression system
   (`StoreTheme.SuppressFixture`/`ReleaseFixture`, reference-counted so the
-  two never fight over a fixture they're both currently holding off) — try
-  a blackout on demand with `/blackout` in chat.
+  two never fight over a fixture they're both currently holding off) —
+  his radius is now `Config.LightsOutRadius` = 60 (was 40) — try a
+  blackout on demand with `/blackout` in chat.
+- **Permanently-flickering light clusters** (`StoreTheme.StartFlicker`): on
+  top of the existing occasional single dead-fixture flicker, a few
+  (`Config.Lighting.PermanentFlickerGroups`, default 3) small clusters of
+  2-4 nearby dead fixtures (`PermanentFlickerGroupSize`, within
+  `PermanentFlickerGroupRadius` grid cells of each other) flicker
+  continuously forever, so a couple of spots in the store read as "this
+  corner's wiring is actually broken" instead of one solitary bulb
+  blinking in isolation. A fixture claimed by a cluster is removed from the
+  occasional-single pool so it's never double-booked.
 
 ## The monster roster
 
@@ -911,6 +941,7 @@ src/StarterPlayerScripts/
   NoclipController.lua                Drives free-fly movement for /spectate (server only toggles the "Flying" state)
   AmbienceController.lua             Store ambience loop, proximity heartbeat, round/exit/escape stingers
   JumpscareController.lua            Full-screen jumpscare on catch + catch/scream audio
+  HidingController.lua               Camera resync to face outward on hide-entry + hide-timeout warning/kick toast
   DeathController.lua                Death/respawn/spectate menu + escape banner
   SpectateController.lua             Camera-follow spectating with target cycling
   MinigameController.lua             Minigame overlay + dispatch to the 6 minigame modules + success/fail audio/toast
